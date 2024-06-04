@@ -3,6 +3,7 @@ import pandas as pd
 import altair as alt
 from st_aggrid import AgGrid, GridOptionsBuilder
 import os
+import plotly.express as px
 
 # Function to process the uploaded file
 @st.cache_data
@@ -178,3 +179,9 @@ if uploaded_file:
     ).properties(width=600)
 
     st.altair_chart(sla_chart, use_container_width=True)
+    # Vulnerabilities per platform Chart
+    fig = px.histogram(df, x='Applications', color='Overall Status', title="<span style='color:#600587'>Vulnerabilities per platform</span>",
+                   )
+
+    # Show the chart
+    st.plotly_chart(fig)
