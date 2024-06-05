@@ -1,17 +1,96 @@
 import streamlit as st
 import pandas as pd
-import altair as alt
-from st_aggrid import AgGrid, GridOptionsBuilder
 import os
-import plotly.express as px
+from st_aggrid import AgGrid, GridOptionsBuilder
 
-# Function to process the uploaded file
+# CSS code
+css_code = '''
+<style>
+.container {
+  padding: 20px;
+  width: 100px;
+  background-color: #fff5e1;
+  border-radius: 10px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+.kpi{
+
+
+}
+
+
+h1 {
+  color: #333333;
+}
+.container1 {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f0f0f0;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      float:right;
+
+    }
+
+.status {
+  margin-top: 20px;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.upload {
+  margin-top: 20px;
+}
+
+.button {
+  margin-top: 20px;
+  padding: 10px 20px;
+  background-color: #4caf50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.button:hover {
+  background-color: #45a049;
+}
+
+.warning {
+  color: red;
+  font-weight: bold;
+  margin-top: 20px;
+}
+.container2 {
+    position: absolute;
+    right: -100px;
+    color: red;
+}
+.title{
+color:white;
+}
+</style>
+'''
+# HTML code
+html_code = f'''
+{css_code}
+
+
+'''
+
+st.set_page_config(layout="wide")
+
+st.subheader("Vulnerabilities(YTD)")
+
+
 @st.cache_data
 def process_file(file):
     try:
         df = pd.read_excel(file)
         df = df[df['Overall Status'] == 'Open']
-        
+
         columns_to_remove = [
             'General Department Name', 'Department', 'Application Delegate', 'Section Manager',
             'Last Scan Date Time', 'Last Vulnerability Authenticated Scanned Date Time',
@@ -19,7 +98,7 @@ def process_file(file):
             'Qualys ID', 'Port Number', 'Vulnerability Reference(s)', 'Related CVEs'
         ]
         df = df.drop(columns=columns_to_remove)
-        
+
         # Add SLA Remaining Days column
         sla_matrix = {
             'Critical': 7,
@@ -29,15 +108,16 @@ def process_file(file):
             'Minimal': 60
         }
         df['SLA Remaining Days'] = df.apply(lambda x: sla_matrix.get(x['Severity'], 0) - x['Ageing in Days'], axis=1)
-        
+
         # Filter out rows that do not contain specific keywords in the Applications column
         keywords = ["Nifi", "CDP", "Airflow", "R-Studio", "Git"]
         df = df[df['Applications'].str.contains('|'.join(keywords), na=False)]
-        
+
         return df
     except Exception as e:
         st.error(f"Error processing file: {e}")
         return pd.DataFrame()  # Return an empty DataFrame on error
+
 
 # Function to save the processed DataFrame
 def save_processed_file(df, filename):
@@ -48,6 +128,7 @@ def save_processed_file(df, filename):
     except Exception as e:
         st.error(f"Error saving file: {e}")
         return None
+
 
 # Upload the vulnerabilities file (in the sidebar)
 uploaded_file = st.sidebar.file_uploader("Upload Vulnerabilities Report", type="xlsx")
@@ -68,6 +149,72 @@ if uploaded_file:
         save_processed_file(df, filename)
 
     # Add dropdowns to filter based on Applications and SLA Breached (in the sidebar)
+    col1, col2, col3, col4, col5 = st.columns(5)
+
+    # this col talk about KPI with servity , LOW , Medium , High ,Critical etc
+
+    with col1:
+        total = len(df)
+        st.markdown(f"""
+             <div style='border: 1px solid #ccc; padding: 10px; border-radius: 25px; background-color: #600587;'>
+              <h3 style="color: white; text-align: center;">Total</h3>
+               <h4 style="color: white;text-align:center;" >{total}</h4>
+
+
+
+       </div>
+
+           """, unsafe_allow_html=True)
+    with col2:
+        critical = (df['Severity'] == 'Critical').sum()
+        st.markdown(f"""
+             <div style='border: 1px solid #ccc; padding: 10px; border-radius: 25px; background-color: #600587;'>
+              <h3 style="color: white; text-align: center;">Critical</h3>
+               <h4 style="color: white;text-align:center;" >{critical}</h4>
+
+
+       </div>
+
+           """, unsafe_allow_html=True)
+
+    with col3:
+        high = (df['Severity'] == 'High').sum()
+        st.markdown(f"""
+             <div style='border: 1px solid #ccc; padding: 10px; border-radius: 25px; background-color: #600587;'>
+              <h3 style="color: white; text-align: center;">High</h3>
+               <h4 style="color: white;text-align:center;" >{high}</h4>
+
+
+
+       </div>
+
+           """, unsafe_allow_html=True)
+    with col4:
+        medium = (df['Severity'] == 'Medium').sum()
+        st.markdown(f"""
+             <div style='border: 1px solid #ccc; padding: 10px; border-radius: 25px; background-color: #600587;'>
+              <h3 style="color: white; text-align: center;">Medium</h3>
+               <h4 style="color: white;text-align:center;" >{medium}</h4>
+
+
+
+       </div>
+
+           """, unsafe_allow_html=True)
+    with col5:
+        Low = (df['Severity'] == 'Low').sum()
+        st.markdown(f"""
+             <div style='border: 1px solid #ccc; padding: 10px; border-radius: 25px; background-color: #600587;'>
+              <h3 style="color: white; text-align: center;">Low</h3>
+               <h4 style="color: white;text-align:center;" >{Low}</h4>
+
+
+
+       </div>
+
+           """, unsafe_allow_html=True)
+
+    st.markdown(html_code, unsafe_allow_html=True)
     st.sidebar.header("Filters")
 
     applications = df['Applications'].unique()
@@ -77,7 +224,8 @@ if uploaded_file:
         df = df[df['Applications'] == selected_application]
 
     sla_breached_options = df['SLA Breached?'].unique()
-    selected_sla_breached = st.sidebar.selectbox("Filter by SLA Breached?", options=["All"] + list(sla_breached_options))
+    selected_sla_breached = st.sidebar.selectbox("Filter by SLA Breached?",
+                                                 options=["All"] + list(sla_breached_options))
 
     if selected_sla_breached != "All":
         df = df[df['SLA Breached?'] == selected_sla_breached]
@@ -117,7 +265,7 @@ if uploaded_file:
         selected_row = selected_rows.iloc[0]
         row_content = selected_row.to_dict()
         st.json(row_content)
-    
+
     # Display statistics about the shown DataFrame
     sla_less_equal_3_days = ((df['SLA Remaining Days'] <= 3) & (df['SLA Remaining Days'] > 0)).sum()
     sla_more_than_3_days = (df['SLA Remaining Days'] > 3).sum()
@@ -138,50 +286,11 @@ if uploaded_file:
     st.table(stats_df.style.hide(axis='index'))
 
     # Create a dashboard for visualization
-    st.subheader("Dashboard")
 
-    # Example visualizations (you can customize these as needed)
-    bar_width = 50  # Set a consistent bar width
 
-    application_chart = alt.Chart(df).mark_bar(size=bar_width).encode(
-        x=alt.X('Applications', axis=alt.Axis(labelAngle=-45)),
-        y='count()',
-        tooltip=['Applications', 'count()']
-    ).properties(width=600)
 
-    sla_breached_chart = alt.Chart(df).mark_bar(size=bar_width).encode(
-        x='SLA Breached?',
-        y='count()',
-        tooltip=['SLA Breached?', 'count()']
-    ).properties(width=600)
 
-    severity_chart = alt.Chart(df).mark_bar(size=bar_width).encode(
-        x='Severity',
-        y='count()',
-        tooltip=['Severity', 'count()']
-    ).properties(width=600)
-    
-    st.altair_chart(application_chart, use_container_width=True)
-    st.altair_chart(sla_breached_chart, use_container_width=True)
-    st.altair_chart(severity_chart, use_container_width=True)
-    st.bar_chart(df['SLA Remaining Days'])
-    # Add a graph for SLA remaining days
-    st.subheader("SLA Remaining Days Distribution")
-    sla_data = {
-        'SLA Remaining Days': ['<= 3 Days', '> 3 Days'],
-        'Count': [sla_less_equal_3_days, sla_more_than_3_days]
-    }
-    sla_df = pd.DataFrame(sla_data)
-    sla_chart = alt.Chart(sla_df).mark_bar(size=bar_width).encode(
-        x='SLA Remaining Days',
-        y='Count',
-        tooltip=['SLA Remaining Days', 'Count']
-    ).properties(width=600)
 
-    st.altair_chart(sla_chart, use_container_width=True)
-    # Vulnerabilities per platform Chart
-    fig = px.histogram(df, x='Applications', color='Overall Status', title="<span style='color:#600587'>Vulnerabilities per platform</span>",
-                   )
 
-    # Show the chart
-    st.plotly_chart(fig)
+
+
