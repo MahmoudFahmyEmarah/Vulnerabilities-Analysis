@@ -148,6 +148,15 @@ if uploaded_file:
 
     # Create a dashboard for visualization
     st.subheader("Dashboard")
+    # Button to go to the Dash dashboard
+    st.markdown("""
+    <a href="http://localhost:8050" target="_blank">
+        <button style='margin: 10px 0px; padding: 10px 20px; background-color: #4CAF50; color: white; border: none; cursor: pointer;'>
+            Go to Dashboard
+        </button>
+    </a>
+    """, unsafe_allow_html=True)
+
     components.html(iframe_code, height=800 ,width=1200)
     # Add CSS for the grid layout
     st.markdown('''
