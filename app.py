@@ -2,7 +2,10 @@ import streamlit as st
 import pandas as pd
 import os
 from st_aggrid import AgGrid, GridOptionsBuilder
-
+import plotly.express as px
+import matplotlib.pyplot as plt
+from datetime import datetime
+import matplotlib.pyplot as plt
 # CSS code
 css_code = '''
 <style>
@@ -12,10 +15,6 @@ css_code = '''
   background-color: #fff5e1;
   border-radius: 10px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-}
-.kpi{
-
-
 }
 
 
@@ -81,10 +80,289 @@ html_code = f'''
 '''
 
 st.set_page_config(layout="wide")
+st.markdown("""
+<style>
+.title {
+    font-size:24px !important;
+    font-weight: bold;
+    color: #5B006A;
+}
+.text{
+    color:white;
+    text-align: center;
 
-st.subheader("Vulnerabilities(YTD)")
+
+}
+.Card{
+
+    border: 1px solid #ccc; 
+    padding: 10px; 
+    margin:5px;
+    border-radius: 25px; 
+    background-color: #600587;
+    width: 150px;
+    height: 150px;
+
+}
+.Card2{
+    display:flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid #ccc; 
+    padding: 10px; 
+    border-radius: 25px; 
+    background-color: #FF375E;
+
+}
 
 
+
+
+
+.main-box {
+    display: flex;
+  justify-content: space-around;
+  align-items: flex-end;
+  border-radius: 10px;
+  padding: 20px;
+
+
+}
+
+.priority-box {
+  margin: 5px;
+  border-radius: 5px;
+
+}
+
+.priority-box.high,
+.priority-box.critical {
+  background-color: #EACDFF; 
+  text-align: center; 
+}
+.Top {
+ background-color: #5B006A;
+ color: white;
+}
+</style>
+""", unsafe_allow_html=True)
+st.markdown('<h2 class="title">Vulnerabilities(YTD)</h2>', unsafe_allow_html=True)
+
+#KPI Fun to measurements Servity
+def KPI():
+    col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
+
+    # this col talk about KPI with servity , LOW , Medium , High ,Critical etc
+
+    with col1:
+        total = len(df)
+        st.markdown(f"""
+                     <div class ="Card">
+                      <h3 class ="text">Total</h3>
+                       <h4 class ="text">{total}</h4>
+                       <h5 class ="text">164 Servers</h4>
+
+
+
+               </div>
+
+                   """, unsafe_allow_html=True)
+    with col2:
+        critical = (df['Severity'] == 'Critical').sum()
+        st.markdown(f"""
+                     <div class ="Card">
+                            <h3 class ="text">Critical</h3>
+                            <h4 class ="text" >{critical}</h4>
+
+
+
+               </div>
+
+                   """, unsafe_allow_html=True)
+
+    with col3:
+        high = (df['Severity'] == 'High').sum()
+        st.markdown(f"""
+                     <div class ="Card">
+                      <h3 class ="text">High</h3>
+                       <h4 class ="text" >{high}</h4>
+
+
+
+               </div>
+
+                   """, unsafe_allow_html=True)
+    with col4:
+        medium = (df['Severity'] == 'Medium').sum()
+        st.markdown(f"""
+                     <div class ="Card">
+                      <h3 class ="text">Medium</h3>
+                       <h4 class ="text" >{medium}</h4>
+                       <h5 class ="text">20 Servers</h4>
+
+
+
+               </div>
+
+                   """, unsafe_allow_html=True)
+    with col5:
+        Low = (df['Severity'] == 'Low').sum()
+        st.markdown(f"""
+                     <div class ="Card">
+                      <h3 class ="text">Low</h3>
+                       <h4 class ="text">{Low}</h4>
+                        <h5 class ="text">132 Servers</h4>
+
+
+
+
+               </div>
+
+                   """, unsafe_allow_html=True)
+    # with col6:
+    #     high = (df['Severity'] == 'High').sum()
+    #     critical = (df['Severity'] == 'Critical').sum()
+    #     st.markdown(f"""
+    #         <div class="Card2">
+    #             <div class="main-box">
+    #                 <div class="priority-box high">
+    #                     <span class="text">{critical}</span>
+    #                     <div class ="Top"> High
+    #                     </div>
+    #                 </div>
+    #                 <div class="priority-box critical">
+    #                     <span class="text">{high}</span>
+    #                     <div class ="Top"> Critical
+    #                     </div>
+    #                 </div>
+    #             </div>
+    #         </div>
+    #
+    #
+    #         """, unsafe_allow_html=True)
+
+
+
+    with col6:
+        #sub last data and first data to
+
+        df['Days'] = (pd.to_datetime(df['Date Last Found']) - pd.to_datetime(df['Date First Found'])).dt.days
+        df['WithSLA'] = 0
+
+        # Define conditions and update 'WithSLA'
+        #check for the days and make sure if it close to SLA or not , above 60 Days it not compliant .
+        df.loc[((df["Days"].between(4, 7)) & (df["Severity"] == "Critical")), 'WithSLA'] = 1
+        df.loc[((df["Days"].between(10, 14)) & (df["Severity"] == "High")), 'WithSLA'] = 1
+        df.loc[((df["Days"].between(20, 30)) & (df["Severity"] == "Medium")), 'WithSLA'] = 1
+        df.loc[((df["Days"].between(40, 45)) & (df["Severity"] == "Low")), 'WithSLA'] = 1
+        df.loc[((df["Days"].between(55, 60)) & (df["Severity"] == "Minimal")), 'WithSLA'] = 1
+        df.loc[((df["Days"].between(0, 100)) & (df["SLA Breached?"] == "Non-Compliant")), 'WithSLA'] = 2
+
+        df.loc[df['WithSLA'] == 0, 'WithSLA'] = "Closed"
+        df.loc[df['WithSLA'] == 1, 'WithSLA'] = "WithSLA"
+        df.loc[df['WithSLA'] == 2, 'WithSLA'] = "Non-Compliant"
+
+
+
+        st.markdown(f"""
+                  <div class ="Card">
+                      <h3 class ="text">Close to SLA</h3>
+                      <h4 class ="text" >{ (df['WithSLA'] == 'WithSLA').sum() }</h4>
+                  </div>
+
+                    """, unsafe_allow_html=True)
+
+    with col7:
+        st.markdown(f"""
+                            <div class ="Card">
+                                <h4 class ="text">Branched SLA</h3>
+                                <h5 class ="text" >{(df['WithSLA'] == 'Non-Compliant').sum()}</h4>
+                            </div>
+
+                              """, unsafe_allow_html=True)
+
+
+
+def Vulnerabilities_chart(df):
+    # Vulnerabilities per platform Chart
+    fig = px.histogram(df, x='Applications', color='Overall Status',
+                       title="<span style='color:#600587; font-size:20px'>Vulnerabilities per platform</span>",
+                       category_orders={'Applications': df['Applications'].value_counts().index}
+                       )
+
+    # Show the chart
+    fig.update_layout(
+        width=1000,  # Width in pixels
+        height=600,  # Height in pixels
+    )
+    st.plotly_chart(fig)
+
+
+#Cluster Chart with any vulnerablities close to SLA
+def Cluster_status(df):
+    #Cluster Chart with any vulnerablities close to SLA
+    sla_counts = df['WithSLA'].value_counts()
+    fig = px.pie(names=sla_counts.index, values=sla_counts.values, labels=sla_counts.index,
+                 title="<span style='color:#600587; font-size:20px'>Cluster Status </span>", hole=0.3)
+    # Show the chart
+    st.plotly_chart(fig)
+
+def Platforms_chart(df):
+    st.markdown('<h2 class="title">PlatForm Close to SLA</h2>', unsafe_allow_html=True)
+
+
+    specific_columns = df[['Applications', 'Title', 'WithSLA', 'Severity',"Days","SLA Remaining Days"]]
+
+    # Filter 'WithSLA' column to only include rows where the value is 'withSLA'
+    specific_columns = specific_columns[specific_columns['WithSLA'] == 'WithSLA']
+    st.table(specific_columns.reset_index(drop=True))
+
+
+def Platform_chart_NonCompliant(df):
+
+    # Filter the   rows with 'WithSLA' containing 'Non-Compliant'
+    filtered_df = df[df['WithSLA'] == 'Non-Compliant']
+    counts = filtered_df['Applications'].value_counts()
+
+    fig = px.bar(x=counts.index, y=counts.values, labels={'x': 'Applications', 'y': 'Count'},title="<span style='color:#600587; font-size:20px'>Most Non Compliant Platform</span>")
+
+    # Show the chart
+    st.plotly_chart(fig)
+
+
+def statistics(df):
+
+    # Display statistics about the shown DataFrame
+    sla_less_equal_3_days = ((df['SLA Remaining Days'] <= 3) & (df['SLA Remaining Days'] > 0)).sum()
+    sla_more_than_3_days = (df['SLA Remaining Days'] > 3).sum()
+    st.subheader("Statistics")
+    stats = {
+        "Total Records": len(df),
+        "Unique Applications": df['Applications'].nunique(),
+        "Critical Vulnerabilities": (df['Severity'] == 'Critical').sum(),
+        "High Vulnerabilities": (df['Severity'] == 'High').sum(),
+        "Medium Vulnerabilities": (df['Severity'] == 'Medium').sum(),
+        "Low Vulnerabilities": (df['Severity'] == 'Low').sum(),
+        "Minimal Vulnerabilities": (df['Severity'] == 'Minimal').sum(),
+        "SLA Breached": (df['SLA Breached?'] == 'Non-Compliant').sum(),
+        "SLA <= 3 Days": sla_less_equal_3_days,
+        "SLA > 3 Days": sla_more_than_3_days,
+
+    }
+    stats_df = pd.DataFrame(list(stats.items()), columns=['Statistic', 'Value'])
+    st.table(stats_df.style.hide(axis='index'))
+
+
+def Stacked_chart(df):
+    # Group by application and severity, and count occurrences
+    grouped_df = df.groupby(['Applications', 'Severity']).size().reset_index(name='count')
+
+    fig = px.bar(grouped_df, x='Applications', y='count', color='Severity',
+                 title="<span style='color:#600587; font-size:20px'>Severity Distribution by Application</span>",
+                 labels={'Applications': 'Application', 'count': 'Count'})
+
+    # Streamlit App
+    st.plotly_chart(fig)
 @st.cache_data
 def process_file(file):
     try:
@@ -107,7 +385,9 @@ def process_file(file):
             'Low': 45,
             'Minimal': 60
         }
-        df['SLA Remaining Days'] = df.apply(lambda x: sla_matrix.get(x['Severity'], 0) - x['Ageing in Days'], axis=1)
+
+        df['SLA Remaining Days'] = df.apply(lambda x: abs(sla_matrix.get(x['Severity'], 0) - x['Ageing in Days']),
+                                            axis=1)
 
         # Filter out rows that do not contain specific keywords in the Applications column
         keywords = ["Nifi", "CDP", "Airflow", "R-Studio", "Git"]
@@ -130,6 +410,7 @@ def save_processed_file(df, filename):
         return None
 
 
+
 # Upload the vulnerabilities file (in the sidebar)
 uploaded_file = st.sidebar.file_uploader("Upload Vulnerabilities Report", type="xlsx")
 
@@ -148,73 +429,12 @@ if uploaded_file:
         # Save the processed DataFrame to a file
         save_processed_file(df, filename)
 
+    # call fun
+    # Create a dashboard for visualization
+
+
+
     # Add dropdowns to filter based on Applications and SLA Breached (in the sidebar)
-    col1, col2, col3, col4, col5 = st.columns(5)
-
-    # this col talk about KPI with servity , LOW , Medium , High ,Critical etc
-
-    with col1:
-        total = len(df)
-        st.markdown(f"""
-             <div style='border: 1px solid #ccc; padding: 10px; border-radius: 25px; background-color: #600587;'>
-              <h3 style="color: white; text-align: center;">Total</h3>
-               <h4 style="color: white;text-align:center;" >{total}</h4>
-
-
-
-       </div>
-
-           """, unsafe_allow_html=True)
-    with col2:
-        critical = (df['Severity'] == 'Critical').sum()
-        st.markdown(f"""
-             <div style='border: 1px solid #ccc; padding: 10px; border-radius: 25px; background-color: #600587;'>
-              <h3 style="color: white; text-align: center;">Critical</h3>
-               <h4 style="color: white;text-align:center;" >{critical}</h4>
-
-
-       </div>
-
-           """, unsafe_allow_html=True)
-
-    with col3:
-        high = (df['Severity'] == 'High').sum()
-        st.markdown(f"""
-             <div style='border: 1px solid #ccc; padding: 10px; border-radius: 25px; background-color: #600587;'>
-              <h3 style="color: white; text-align: center;">High</h3>
-               <h4 style="color: white;text-align:center;" >{high}</h4>
-
-
-
-       </div>
-
-           """, unsafe_allow_html=True)
-    with col4:
-        medium = (df['Severity'] == 'Medium').sum()
-        st.markdown(f"""
-             <div style='border: 1px solid #ccc; padding: 10px; border-radius: 25px; background-color: #600587;'>
-              <h3 style="color: white; text-align: center;">Medium</h3>
-               <h4 style="color: white;text-align:center;" >{medium}</h4>
-
-
-
-       </div>
-
-           """, unsafe_allow_html=True)
-    with col5:
-        Low = (df['Severity'] == 'Low').sum()
-        st.markdown(f"""
-             <div style='border: 1px solid #ccc; padding: 10px; border-radius: 25px; background-color: #600587;'>
-              <h3 style="color: white; text-align: center;">Low</h3>
-               <h4 style="color: white;text-align:center;" >{Low}</h4>
-
-
-
-       </div>
-
-           """, unsafe_allow_html=True)
-
-    st.markdown(html_code, unsafe_allow_html=True)
     st.sidebar.header("Filters")
 
     applications = df['Applications'].unique()
@@ -235,57 +455,36 @@ if uploaded_file:
 
     if selected_severity != "All":
         df = df[df['Severity'] == selected_severity]
+    #Fun call
+    KPI()
+    statistics(df)
+    Vulnerabilities_chart(df)
+    Stacked_chart(df)
+    Cluster_status(df)
+    Platforms_chart(df)
+    Platform_chart_NonCompliant(df)
 
-    # Display the filtered DataFrame using AgGrid for interactivity
-    gb = GridOptionsBuilder.from_dataframe(df)
-    gb.configure_selection(selection_mode="single", use_checkbox=False)
 
-    # Set the column widths and ensure they are wide enough to display the content
-    columns = df.columns
-    for column in columns:
-        gb.configure_column(column, width=200)  # Adjust the width as needed
 
-    grid_options = gb.build()
 
-    grid_response = AgGrid(
-        df,
-        gridOptions=grid_options,
-        height=400,
-        width='150%',
-        data_return_mode='AS_INPUT',
-        update_mode='MODEL_CHANGED',
-        fit_columns_on_grid_load=False,  # Ensure columns are not auto-fitted
-        allow_unsafe_jscode=True,  # This enables the usage of JsCode
-        enable_enterprise_modules=False,
-    )
 
-    # Get the selected row
-    selected_rows = grid_response.get('selected_rows', pd.DataFrame())
-    if isinstance(selected_rows, pd.DataFrame) and not selected_rows.empty:
-        selected_row = selected_rows.iloc[0]
-        row_content = selected_row.to_dict()
-        st.json(row_content)
 
-    # Display statistics about the shown DataFrame
-    sla_less_equal_3_days = ((df['SLA Remaining Days'] <= 3) & (df['SLA Remaining Days'] > 0)).sum()
-    sla_more_than_3_days = (df['SLA Remaining Days'] > 3).sum()
-    st.subheader("Statistics")
-    stats = {
-        "Total Records": len(df),
-        "Unique Applications": df['Applications'].nunique(),
-        "Critical Vulnerabilities": (df['Severity'] == 'Critical').sum(),
-        "High Vulnerabilities": (df['Severity'] == 'High').sum(),
-        "Medium Vulnerabilities": (df['Severity'] == 'Medium').sum(),
-        "Low Vulnerabilities": (df['Severity'] == 'Low').sum(),
-        "Minimal Vulnerabilities": (df['Severity'] == 'Minimal').sum(),
-        "SLA Breached": (df['SLA Breached?'] == 'Non-Compliant').sum(),
-        "SLA <= 3 Days": sla_less_equal_3_days,
-        "SLA > 3 Days": sla_more_than_3_days
-    }
-    stats_df = pd.DataFrame(list(stats.items()), columns=['Statistic', 'Value'])
-    st.table(stats_df.style.hide(axis='index'))
 
-    # Create a dashboard for visualization
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
