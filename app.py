@@ -5,7 +5,9 @@ from st_aggrid import AgGrid, GridOptionsBuilder
 import plotly.express as px
 import matplotlib.pyplot as plt
 from datetime import datetime
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+
+
 # CSS code
 css_code = '''
 <style>
@@ -283,19 +285,33 @@ def KPI():
 
 
 
-def Vulnerabilities_chart(df):
-    # Vulnerabilities per platform Chart
-    fig = px.histogram(df, x='Applications', color='Overall Status',
-                       title="<span style='color:#600587; font-size:20px'>Vulnerabilities per platform</span>",
-                       category_orders={'Applications': df['Applications'].value_counts().index}
-                       )
 
-    # Show the chart
+def Vulnerabilities_chart(df):
+    keywords = df['Applications'].unique().tolist()
+    df_closed = df[(df['Overall Status'] == 'Closed')]
+    df_open = df[(df['Overall Status'] == 'Open')]
+    df_not = df[(df['WithSLA'] == 'Non-Compliant') ]
+
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Bar(x=keywords, y=df_closed.groupby('Applications').size().reindex(keywords, fill_value=0), name='Closed', width=0.1))
+    fig.add_trace(go.Bar(x=keywords, y=df_open.groupby('Applications').size().reindex(keywords, fill_value=0), name='Open', width=0.1))
+    fig.add_trace(
+        go.Bar(x=keywords, y=df_not.groupby('Applications').size().reindex(keywords, fill_value=0), name='Non-Compliant', width=0.1))
+
     fig.update_layout(
-        width=1000,  # Width in pixels
-        height=600,  # Height in pixels
+        title="<span style='color:#600587; font-size:20px'>Vulnerabilities per platform</span>",
+        xaxis_title='Platform',
+        yaxis_title='Values',
     )
+
+    # Display the chart using Streamlit
     st.plotly_chart(fig)
+
+
+
+
 
 
 #Cluster Chart with any vulnerablities close to SLA
@@ -355,22 +371,55 @@ def statistics(df):
 
 
 def Stacked_chart(df):
-    # Group by application and severity, and count occurrences
-    grouped_df = df.groupby(['Applications', 'Severity']).size().reset_index(name='count').sort_values(by='count',
-                                                                                                       ascending=False)
+    keywords = df['Applications'].unique().tolist()
+    df_low = df[(df['Severity'] == 'Low')]
+    df_med = df[(df['Severity'] == 'Medium')]
+    df_high = df[(df['Severity'] == 'High')]
+    df_Critical = df[(df['Severity'] == 'Critical')]
+    df_medin= df[(df['Severity'] == 'Minimal')]
 
-    fig = px.bar(grouped_df, x='Applications', y='count', color='Severity', barmode='stack',
-                 title="<span style='color:#600587; font-size:20px'>Severity Distribution by Application</span>",
-                 labels={'Applications': 'Application', 'count': 'Count'})
 
-    # Streamlit App
+    fig = go.Figure()
+
+    fig.add_trace(
+        go.Bar(x=keywords,
+               y=df_low.groupby('Applications').size().reindex(keywords, fill_value=0),
+               name='Low',
+               marker_color='blue',
+               width=0.1, ))
+    fig.add_trace(
+        go.Bar(x=keywords,
+               y=df_med.groupby('Applications').size().reindex(keywords, fill_value=0),
+               name='Medium',
+               marker_color='orange',
+               width=0.1))
+    fig.add_trace(
+        go.Bar(x=keywords,
+               y=df_high.groupby('Applications').size().reindex(keywords, fill_value=0),
+               name='High',
+               marker_color='red',
+               width=0.1))
+
+    fig.add_trace(
+        go.Bar(x=keywords,
+               y=df_medin.groupby('Applications').size().reindex(keywords, fill_value=0),
+               name='Minimal',
+               marker_color='lightgreen',
+               width=0.1))
+
+
+    fig.update_layout(
+        title="<span style='color:#600587; font-size:20px'>Severity Distribution by Platform</span>",
+        xaxis_title='Platform',
+        yaxis_title='Values',
+    )
+    #
+    # Display the chart using Streamlit
     st.plotly_chart(fig)
 @st.cache_data
 def process_file(file):
     try:
         df = pd.read_excel(file)
-        df = df[df['Overall Status'] == 'Open']
-
         columns_to_remove = [
             'General Department Name', 'Department', 'Application Delegate', 'Section Manager',
             'Last Scan Date Time', 'Last Vulnerability Authenticated Scanned Date Time',
@@ -460,15 +509,8 @@ if uploaded_file:
     #Fun call
     KPI()
     statistics(df)
-    # Create two columns layout
-    col1, col2 = st.columns(2)
-
-    # Display charts in each column
-    with col1:
-        Vulnerabilities_chart(df)
-
-    with col2:
-        Stacked_chart(df)
+    Vulnerabilities_chart(df)
+    Stacked_chart(df)
 
     col3,col4 = st.columns(2)
     with col3:
@@ -479,6 +521,13 @@ if uploaded_file:
 
 
     Platforms_chart(df)
+
+    # Sample data
+
+
+
+
+
 
 
 
