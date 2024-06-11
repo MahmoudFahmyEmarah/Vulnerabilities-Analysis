@@ -324,7 +324,8 @@ def Platform_chart_NonCompliant(df):
     filtered_df = df[df['WithSLA'] == 'Non-Compliant']
     counts = filtered_df['Applications'].value_counts()
 
-    fig = px.bar(x=counts.index, y=counts.values, labels={'x': 'Applications', 'y': 'Count'},title="<span style='color:#600587; font-size:20px'>Most Non Compliant Platform</span>")
+    fig = px.bar(x=counts.index, y=counts.values, labels={'x': 'Applications', 'y': 'Count'},
+                 title="<span style='color:#600587; font-size:20px'>Most Non-Compliant Platform</span>")
 
     # Show the chart
     st.plotly_chart(fig)
@@ -355,9 +356,10 @@ def statistics(df):
 
 def Stacked_chart(df):
     # Group by application and severity, and count occurrences
-    grouped_df = df.groupby(['Applications', 'Severity']).size().reset_index(name='count')
+    grouped_df = df.groupby(['Applications', 'Severity']).size().reset_index(name='count').sort_values(by='count',
+                                                                                                       ascending=False)
 
-    fig = px.bar(grouped_df, x='Applications', y='count', color='Severity',
+    fig = px.bar(grouped_df, x='Applications', y='count', color='Severity', barmode='stack',
                  title="<span style='color:#600587; font-size:20px'>Severity Distribution by Application</span>",
                  labels={'Applications': 'Application', 'count': 'Count'})
 
@@ -458,13 +460,25 @@ if uploaded_file:
     #Fun call
     KPI()
     statistics(df)
-    Vulnerabilities_chart(df)
-    Stacked_chart(df)
-    Cluster_status(df)
+    # Create two columns layout
+    col1, col2 = st.columns(2)
+
+    # Display charts in each column
+    with col1:
+        Vulnerabilities_chart(df)
+
+    with col2:
+        Stacked_chart(df)
+
+    col3,col4 = st.columns(2)
+    with col3:
+        Cluster_status(df)
+
+    with col4:
+        Platform_chart_NonCompliant(df)
+
+
     Platforms_chart(df)
-    Platform_chart_NonCompliant(df)
-
-
 
 
 
