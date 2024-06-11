@@ -413,6 +413,7 @@ def Stacked_chart(df):
         xaxis_title='Platform',
         yaxis_title='Values',
     )
+    #
     # Display the chart using Streamlit
     st.plotly_chart(fig)
 @st.cache_data
