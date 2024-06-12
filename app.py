@@ -2,12 +2,19 @@ import streamlit as st
 import pandas as pd
 import os
 
+from pandas import DataFrame
+
 from plots import kpi, vulnerabilities_per_platform, closure_status, platforms_close_to_sla_table, \
     most_non_compliant_platforms, statistics, \
     severity_distribution_by_platform
-from Emarah import main_Em
+from ai_solution import ai_solution
+
 
 def setup_page():
+    """
+    Setup the page layout and styling
+    :return:
+    """
     st.set_page_config(layout="wide")
     st.markdown("""
     <style>
@@ -73,7 +80,12 @@ def setup_page():
 
 
 @st.cache_data
-def process_file(file):
+def process_file(file: str) -> DataFrame:
+    """
+    Process the uploaded file and return the processed DataFrame
+    :param file:
+    :return: df
+    """
     try:
         df = pd.read_excel(file)
         columns_to_remove = [
@@ -107,7 +119,7 @@ def process_file(file):
 
 
 # Function to save the processed DataFrame
-def save_processed_file(df, filename):
+def save_processed_file(df: DataFrame, filename: str) -> str:
     try:
         processed_filename = f"processed_{filename}"
         df.to_csv(processed_filename, index=False)
@@ -118,12 +130,20 @@ def save_processed_file(df, filename):
 
 
 def upload_file():
+    """
+    Upload the vulnerabilities file (in the sidebar)
+    :return: uploaded_file
+    """
     uploaded_file = st.sidebar.file_uploader("Upload Vulnerabilities Report", type="xlsx")
     return uploaded_file
 
 
-def apply_filters(df):
-    # Add dropdowns to filter based on Applications and SLA Breached (in the sidebar)
+def apply_filters(df: DataFrame):
+    """
+    Apply filters to the DataFrame based on the selected options
+    :param df: type: DataFrame
+    :return:df type: DataFrame
+    """
     st.sidebar.header("Filters")
 
     applications = df['Applications'].unique()
@@ -148,7 +168,12 @@ def apply_filters(df):
     return df
 
 
-def create_dashboard(df):
+def create_dashboard(df: DataFrame):
+    """
+    Create the dashboard with the given DataFrame
+    :param df:
+    :return:
+    """
     kpi(df)
     statistics(df)
     vulnerabilities_per_platform(df)
@@ -162,12 +187,12 @@ def create_dashboard(df):
     platforms_close_to_sla_table(df)
 
 
+def dashboard_service():
+    """
+    Main function to run the dashboard service
 
-
-# Display the selected page
-
-def main():
-
+    :return:
+    """
     uploaded_file = upload_file()
 
     if uploaded_file:
@@ -192,13 +217,11 @@ def main():
         create_dashboard(df)
 
 
-
-
 if __name__ == "__main__":
     setup_page()
 
-    page = st.sidebar.selectbox('Navigation', ['Page 1', 'Page 2'])
-    if page == 'Page 1':
-        main()
-    elif page == 'Page 2':
-        main_Em()
+    page = st.sidebar.selectbox('Navigation', ['AI Solution', 'Dashboard'])
+    if page == 'AI Solution':
+        ai_solution()
+    elif page == 'Dashboard':
+        dashboard_service()

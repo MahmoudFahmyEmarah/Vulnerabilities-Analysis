@@ -51,7 +51,7 @@ def save_processed_file(df, filename):
         return None
 
 
-def main_Em():
+def ai_solution():
     # Upload the vulnerabilities file (in the sidebar)
     uploaded_file = st.sidebar.file_uploader("Upload Vulnerabilities Report", type="xlsx")
 
@@ -122,65 +122,5 @@ def main_Em():
             row_content = selected_row.to_dict()
             st.json(row_content)
 
-        # Display statistics about the shown DataFrame
-        sla_less_equal_3_days = ((df['SLA Remaining Days'] <= 3) & (df['SLA Remaining Days'] > 0)).sum()
-        sla_more_than_3_days = (df['SLA Remaining Days'] > 3).sum()
-        st.subheader("Statistics")
-        stats = {
-            "Total Records": len(df),
-            "Unique Applications": df['Applications'].nunique(),
-            "Critical Vulnerabilities": (df['Severity'] == 'Critical').sum(),
-            "High Vulnerabilities": (df['Severity'] == 'High').sum(),
-            "Medium Vulnerabilities": (df['Severity'] == 'Medium').sum(),
-            "Low Vulnerabilities": (df['Severity'] == 'Low').sum(),
-            "Minimal Vulnerabilities": (df['Severity'] == 'Minimal').sum(),
-            "SLA Breached": (df['SLA Breached?'] == 'Non-Compliant').sum(),
-            "SLA <= 3 Days": sla_less_equal_3_days,
-            "SLA > 3 Days": sla_more_than_3_days
-        }
-        stats_df = pd.DataFrame(list(stats.items()), columns=['Statistic', 'Value'])
-        st.table(stats_df.style.hide(axis='index'))
 
-        # Create a dashboard for visualization
-        st.subheader("Dashboard")
-
-        # Example visualizations (you can customize these as needed)
-        bar_width = 50  # Set a consistent bar width
-
-        application_chart = alt.Chart(df).mark_bar(size=bar_width).encode(
-            x=alt.X('Applications', axis=alt.Axis(labelAngle=-45)),
-            y='count()',
-            tooltip=['Applications', 'count()']
-        ).properties(width=600)
-
-        sla_breached_chart = alt.Chart(df).mark_bar(size=bar_width).encode(
-            x='SLA Breached?',
-            y='count()',
-            tooltip=['SLA Breached?', 'count()']
-        ).properties(width=600)
-
-        severity_chart = alt.Chart(df).mark_bar(size=bar_width).encode(
-            x='Severity',
-            y='count()',
-            tooltip=['Severity', 'count()']
-        ).properties(width=600)
-
-        st.altair_chart(application_chart, use_container_width=True)
-        st.altair_chart(sla_breached_chart, use_container_width=True)
-        st.altair_chart(severity_chart, use_container_width=True)
-        st.bar_chart(df['SLA Remaining Days'])
-        # Add a graph for SLA remaining days
-        st.subheader("SLA Remaining Days Distribution")
-        sla_data = {
-            'SLA Remaining Days': ['<= 3 Days', '> 3 Days'],
-            'Count': [sla_less_equal_3_days, sla_more_than_3_days]
-        }
-        sla_df = pd.DataFrame(sla_data)
-        sla_chart = alt.Chart(sla_df).mark_bar(size=bar_width).encode(
-            x='SLA Remaining Days',
-            y='Count',
-            tooltip=['SLA Remaining Days', 'Count']
-        ).properties(width=600)
-
-        st.altair_chart(sla_chart, use_container_width=True)
 

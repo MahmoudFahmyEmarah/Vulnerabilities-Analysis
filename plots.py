@@ -1,10 +1,16 @@
 import pandas as pd
 import streamlit as st
-from plotly import graph_objects as go, express as px
+from pandas import DataFrame
+from plotly import graph_objects as go
 
 
 #TODO we need to move any preprocessing on the df to the preprocessing.py file to save the preprocessed file and load it here
-def kpi(df):
+def kpi(df: DataFrame):
+    """
+    Display the KPIs for the given DataFrame
+    :param df:
+    :return:
+    """
     col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
 
     with col1:
@@ -98,12 +104,16 @@ def kpi(df):
                               """, unsafe_allow_html=True)
 
 
-def vulnerabilities_per_platform(df):
+def vulnerabilities_per_platform(df: DataFrame):
+    """
+    Display the vulnerabilities per platform
+    :param df:
+    :return:
+    """
     keywords = df['Applications'].unique().tolist()
     df_closed = df[(df['Overall Status'] == 'Closed')]
     df_open = df[(df['Overall Status'] == 'Open')]
     df_not = df[(df['WithSLA'] == 'Non-Compliant')]
-    df_within_sla = df[(df['WithSLA'] == 'WithSLA')]
 
     #TODO double check here if the status is closed or not for the breached sla
     fig = go.Figure()
@@ -114,15 +124,11 @@ def vulnerabilities_per_platform(df):
     fig.add_trace(
         go.Bar(x=keywords, y=df_open.groupby('Applications').size().reindex(keywords, fill_value=0),
                name='Open', marker_color='#EACDFF', width=0.1))
-    fig.add_trace(
-        go.Bar(x=keywords, y=df_within_sla.groupby('Applications').size().reindex(keywords, fill_value=0),
-               name='Within SLA', marker_color='#FFA500', width=0.1))
 
     #TODO we need to make this for open tickets only
     fig.add_trace(
         go.Bar(x=keywords, y=df_not.groupby('Applications').size().reindex(keywords, fill_value=0),
-               name='Breach SLA', marker_color='#FF0000', width=0.1))
-
+               name='Non-Compliant', marker_color='#FF0000', width=0.1))
 
     fig.update_layout(
         title="<span style='color:#600587; font-size:20px'>Vulnerabilities per platform</span>",
@@ -132,7 +138,12 @@ def vulnerabilities_per_platform(df):
     st.plotly_chart(fig)
 
 
-def severity_distribution_by_platform(df):
+def severity_distribution_by_platform(df: DataFrame):
+    """
+    Display the severity distribution by platform
+    :param df:
+    :return:
+    """
     keywords = df['Applications'].unique().tolist()
     df_low = df[(df['Severity'] == 'Low')]
     df_med = df[(df['Severity'] == 'Medium')]
@@ -183,7 +194,12 @@ def severity_distribution_by_platform(df):
 
 #TODO How we can know if it closed within the sla or not (we need to make this for only the closed tickets)
 
-def closure_status(df):
+def closure_status(df: DataFrame):
+    """
+    Display the closure status
+    :param df:
+    :return:
+    """
     sla_counts = df['WithSLA'].value_counts()
     colors = ['#6ED99D' if status == 'Closed' else '#ee2400' if status == 'Non-Compliant' else 'pink' for status in
               sla_counts.index]
@@ -203,18 +219,18 @@ def closure_status(df):
     st.plotly_chart(fig)
 
 
-#
-# "#6ED99D" if status == "Closed" else "red" if status == "Non-Compliant" else "pink"
-# for status in
-
-
-def most_non_compliant_platforms(df):
+def most_non_compliant_platforms(df: DataFrame):
+    """
+    Display the most non-compliant platforms
+    :param df:
+    :return:
+    """
     # Filter the   rows with 'WithSLA' containing 'Non-Compliant'
     filtered_df = df[df['WithSLA'] == 'Non-Compliant']
     counts = filtered_df['Applications'].value_counts()
     fig = go.Figure()
     fig.add_trace(go.Bar(name='Applications', x=counts.index, y=counts.values,
-                         marker_color='#6ED99D', width=0.5))
+                         marker_color='#6ED99D', width=0.3))
 
     fig.update_layout(
         title="<span style='color:#600587; font-size:20px'>Most Non-Compliant Platform</span>",
@@ -226,7 +242,12 @@ def most_non_compliant_platforms(df):
     st.plotly_chart(fig)
 
 
-def statistics(df):
+def statistics(df: DataFrame):
+    """
+    Display the statistics
+    :param df:
+    :return:
+    """
     # Display statistics about the shown DataFrame
     sla_less_equal_3_days = ((df['SLA Remaining Days'] <= 3) & (df['SLA Remaining Days'] > 0)).sum()
     sla_more_than_3_days = (df['SLA Remaining Days'] > 3).sum()
@@ -248,7 +269,12 @@ def statistics(df):
     st.table(stats_df.style.hide(axis='index'))
 
 
-def platforms_close_to_sla_table(df):
+def platforms_close_to_sla_table(df: DataFrame):
+    """
+    Display the platforms close to SLA in a table
+    :param df:
+    :return:
+    """
     st.markdown('<h2 class="title">PlatForm Close to SLA</h2>', unsafe_allow_html=True)
 
     specific_columns = df[['Applications', 'Title', 'WithSLA', 'Severity', "Days", "SLA Remaining Days"]]
