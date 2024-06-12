@@ -152,11 +152,11 @@ def create_dashboard(df):
     statistics(df)
     vulnerabilities_per_platform(df)
     severity_distribution_by_platform(df)
-    col3, col4 = st.columns(2)
-    with col3:
+    col1, col2 = st.columns(2)
+    with col1:
         closure_status(df)
 
-    with col4:
+    with col2:
         most_non_compliant_platforms(df)
     platforms_close_to_sla_table(df)
 
