@@ -2,72 +2,73 @@ import streamlit as st
 import pandas as pd
 import os
 
-from plots import KPI, Vulnerabilities_chart, Cluster_status, Platforms_chart, Platform_chart_NonCompliant, statistics, \
-    Stacked_chart
+from plots import kpi, vulnerabilities_per_platform, closure_status, platforms_close_to_sla_table, most_non_compliant_platforms, statistics, \
+    severity_distribution_by_platform
 
 
-st.set_page_config(layout="wide")
-st.markdown("""
-<style>
-.title {
-    font-size:24px !important;
-    font-weight: bold;
-    color: #5B006A;
-    font-family: Arial;
-
-}
-.text{
-    color:white;
-    text-align: center;
-    font_family: Arial;
-}
-.statistic{
-    color:#600587;
-    font-size: 22px;
-    font-weight: bold;
-    text-align: center;
-    font_family: Arial;
-}
-.Card{
-
-    border: 1px solid #ccc; 
-    padding: 0px; 
-    margin:0px;
-    border-radius: 25px; 
-    background-color: #EACDFF;
-    width: 150px;
-    height: 150px;
-    text-align: center;
-
-}
-.Card .top-part {
-    background-color: #600587;  /* Change this to the color you want */
-    height: 25%;  /* This represents the top 20% of the card */
-    width: 100%;
-    border-radius: 23px 23px 0 0;  /* Rounded corners at the top */
-    padding: 0;  /* Remove padding */
-    margin: 0;  /* Remove margin */
-}
-.main-box {
-    display: flex;
-  justify-content: space-around;
-  align-items: flex-end;
-  border-radius: 10px;
-  padding: 20px;
-}
-.priority-box {
-  margin: 5px;
-  border-radius: 5px;
-
-}
-.priority-box.high,
-.priority-box.critical {
-  background-color: #EACDFF; 
-  text-align: center; 
-}
-</style>
-""", unsafe_allow_html=True)
-st.markdown('<h2 class="title">Vulnerabilities(YTD)</h2>', unsafe_allow_html=True)
+def setup_page():
+    st.set_page_config(layout="wide")
+    st.markdown("""
+    <style>
+    .title {
+        font-size:24px !important;
+        font-weight: bold;
+        color: #5B006A;
+        font-family: Arial;
+    
+    }
+    .text{
+        color:white;
+        text-align: center;
+        font_family: Arial;
+    }
+    .statistic{
+        color:#600587;
+        font-size: 22px;
+        font-weight: bold;
+        text-align: center;
+        font_family: Arial;
+    }
+    .Card{
+    
+        border: 1px solid #ccc; 
+        padding: 0px; 
+        margin:0px;
+        border-radius: 25px; 
+        background-color: #EACDFF;
+        width: 150px;
+        height: 150px;
+        text-align: center;
+    
+    }
+    .Card .top-part {
+        background-color: #600587;  /* Change this to the color you want */
+        height: 25%;  /* This represents the top 20% of the card */
+        width: 100%;
+        border-radius: 23px 23px 0 0;  /* Rounded corners at the top */
+        padding: 0;  /* Remove padding */
+        margin: 0;  /* Remove margin */
+    }
+    .main-box {
+        display: flex;
+      justify-content: space-around;
+      align-items: flex-end;
+      border-radius: 10px;
+      padding: 20px;
+    }
+    .priority-box {
+      margin: 5px;
+      border-radius: 5px;
+    
+    }
+    .priority-box.high,
+    .priority-box.critical {
+      background-color: #EACDFF; 
+      text-align: center; 
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    st.markdown('<h2 class="title">Vulnerabilities(YTD)</h2>', unsafe_allow_html=True)
 
 
 @st.cache_data
@@ -115,29 +116,12 @@ def save_processed_file(df, filename):
         return None
 
 
-# Upload the vulnerabilities file (in the sidebar)
-uploaded_file = st.sidebar.file_uploader("Upload Vulnerabilities Report", type="xlsx")
+def upload_file():
+    uploaded_file = st.sidebar.file_uploader("Upload Vulnerabilities Report", type="xlsx")
+    return uploaded_file
 
-if uploaded_file:
-    # Check if a processed file already exists
-    filename = uploaded_file.name
-    processed_filename = f"processed_{filename}"
 
-    if os.path.exists(processed_filename):
-        df = pd.read_csv(processed_filename)
-
-    else:
-        # Process the file and cache the result
-        df = process_file(uploaded_file)
-
-        if df.empty:
-            st.stop()  # Stop execution if DataFrame is empty
-        # Save the processed DataFrame to a file
-        save_processed_file(df, filename)
-
-    # call fun
-    # Create a dashboard for visualization
-
+def apply_filters(df):
     # Add dropdowns to filter based on Applications and SLA Breached (in the sidebar)
     st.sidebar.header("Filters")
 
@@ -159,18 +143,49 @@ if uploaded_file:
 
     if selected_severity != "All":
         df = df[df['Severity'] == selected_severity]
-    #Fun call
-    KPI(df)
-    statistics(df)
-    Vulnerabilities_chart(df)
-    Stacked_chart(df)
 
+    return df
+
+
+def create_dashboard(df):
+    kpi(df)
+    statistics(df)
+    vulnerabilities_per_platform(df)
+    severity_distribution_by_platform(df)
     col3, col4 = st.columns(2)
     with col3:
-        Cluster_status(df)
+        closure_status(df)
 
     with col4:
-        Platform_chart_NonCompliant(df)
+        most_non_compliant_platforms(df)
+    platforms_close_to_sla_table(df)
 
-    Platforms_chart(df)
 
+def main():
+    setup_page()
+    uploaded_file = upload_file()
+
+    if uploaded_file:
+        # Check if a processed file already exists
+        filename = uploaded_file.name
+        processed_filename = f"processed_{filename}"
+
+        if os.path.exists(processed_filename):
+            df = pd.read_csv(processed_filename)
+
+        else:
+            # Process the file and cache the result
+            df = process_file(uploaded_file)
+
+            if df.empty:
+                st.stop()  # Stop execution if DataFrame is empty
+            # Save the processed DataFrame to a file
+            save_processed_file(df, filename)
+
+        # Apply filters
+        df = apply_filters(df)
+        create_dashboard(df)
+
+
+if __name__ == "__main__":
+    main()
