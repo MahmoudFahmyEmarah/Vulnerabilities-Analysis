@@ -4,13 +4,18 @@ import os
 
 from plots import kpi, vulnerabilities_per_platform, closure_status, platforms_close_to_sla_table, \
     most_non_compliant_platforms, statistics, \
-    severity_distribution_by_platform
-from Emarah import main_Em
+    severity_distribution_by_platform,vulnerabilities_per_month,vulnerabilities_by_server,vulnerabilities_by_server2,vulnerabilities_per_month2
+from Ai_solution import main_Em
+
 
 def setup_page():
-    st.set_page_config(layout="wide")
+    st.set_page_config(page_title="Vulnerability Trend", layout="wide", page_icon=":lock:",
+                       initial_sidebar_state="expanded")
     st.markdown("""
     <style>
+     body {
+        background-color: red;
+    }
     .title {
         font-size:24px !important;
         font-weight: bold;
@@ -99,6 +104,10 @@ def process_file(file):
         # Filter out rows that do not contain specific keywords in the Applications column
         keywords = ["Nifi", "CDP", "Airflow", "R-Studio", "Git"]
         df = df[df['Applications'].str.contains('|'.join(keywords), na=False)]
+        df['Date Last Found'] = pd.to_datetime(df['Date Last Found'])
+        df['Date Last Found'] = pd.to_datetime(df['Date Last Found'], format='%Y-%m-%d')
+
+        df['month'] = df['Date Last Found'].dt.month
 
         return df
     except Exception as e:
@@ -150,19 +159,30 @@ def apply_filters(df):
 
 def create_dashboard(df):
     kpi(df)
-    statistics(df)
-    vulnerabilities_per_platform(df)
-    severity_distribution_by_platform(df)
-    col1, col2 = st.columns(2)
+    # statistics(df)
+    # vulnerabilities_per_platform(df)
+    # severity_distribution_by_platform(df)
+    #
+    # col1, col2 = st.columns(2)
+    # with col1:
+    #     closure_status(df)
+    #
+    # with col2:
+    #     most_non_compliant_platforms(df)
+    # platforms_close_to_sla_table(df)
+
+    col1,col2=st.columns(2)
     with col1:
-        closure_status(df)
+        vulnerabilities_per_month(df)
 
     with col2:
-        most_non_compliant_platforms(df)
-    platforms_close_to_sla_table(df)
+        vulnerabilities_by_server(df)
+    col3,col4=st.columns(2)
 
-
-
+    with col3:
+        vulnerabilities_by_server2(df)
+    with col4:
+        vulnerabilities_per_month2(df)
 
 # Display the selected page
 
@@ -178,6 +198,7 @@ def main():
         if os.path.exists(processed_filename):
             df = pd.read_csv(processed_filename)
 
+
         else:
             # Process the file and cache the result
             df = process_file(uploaded_file)
@@ -192,13 +213,15 @@ def main():
         create_dashboard(df)
 
 
-
-
 if __name__ == "__main__":
-    setup_page()
 
-    page = st.sidebar.selectbox('Navigation', ['Page 1', 'Page 2'])
-    if page == 'Page 1':
+    setup_page()
+    sideb = st.sidebar
+    dash = sideb.button("dashboard")
+    Ai = sideb.button("Ai solution")
+    if dash:
         main()
-    elif page == 'Page 2':
+    if Ai:
         main_Em()
+
+    main()

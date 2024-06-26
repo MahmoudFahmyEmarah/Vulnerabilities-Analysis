@@ -10,6 +10,8 @@ import os
 def process_file(file):
     try:
         df = pd.read_excel(file)
+
+
         df = df[df['Overall Status'] == 'Open']
 
         columns_to_remove = [
@@ -141,46 +143,6 @@ def main_Em():
         stats_df = pd.DataFrame(list(stats.items()), columns=['Statistic', 'Value'])
         st.table(stats_df.style.hide(axis='index'))
 
-        # Create a dashboard for visualization
-        st.subheader("Dashboard")
 
-        # Example visualizations (you can customize these as needed)
-        bar_width = 50  # Set a consistent bar width
-
-        application_chart = alt.Chart(df).mark_bar(size=bar_width).encode(
-            x=alt.X('Applications', axis=alt.Axis(labelAngle=-45)),
-            y='count()',
-            tooltip=['Applications', 'count()']
-        ).properties(width=600)
-
-        sla_breached_chart = alt.Chart(df).mark_bar(size=bar_width).encode(
-            x='SLA Breached?',
-            y='count()',
-            tooltip=['SLA Breached?', 'count()']
-        ).properties(width=600)
-
-        severity_chart = alt.Chart(df).mark_bar(size=bar_width).encode(
-            x='Severity',
-            y='count()',
-            tooltip=['Severity', 'count()']
-        ).properties(width=600)
-
-        st.altair_chart(application_chart, use_container_width=True)
-        st.altair_chart(sla_breached_chart, use_container_width=True)
-        st.altair_chart(severity_chart, use_container_width=True)
-        st.bar_chart(df['SLA Remaining Days'])
-        # Add a graph for SLA remaining days
-        st.subheader("SLA Remaining Days Distribution")
-        sla_data = {
-            'SLA Remaining Days': ['<= 3 Days', '> 3 Days'],
-            'Count': [sla_less_equal_3_days, sla_more_than_3_days]
-        }
-        sla_df = pd.DataFrame(sla_data)
-        sla_chart = alt.Chart(sla_df).mark_bar(size=bar_width).encode(
-            x='SLA Remaining Days',
-            y='Count',
-            tooltip=['SLA Remaining Days', 'Count']
-        ).properties(width=600)
-
-        st.altair_chart(sla_chart, use_container_width=True)
+main_Em()
 
