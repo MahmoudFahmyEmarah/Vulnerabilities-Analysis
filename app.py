@@ -18,45 +18,95 @@ def setup_page():
     st.set_page_config(layout="wide")
     st.markdown("""
     <style>
-    .title {
+        .page-title {
         font-size:24px !important;
         font-weight: bold;
         color: #5B006A;
         font-family: Arial;
-
     }
-    .text{
-        color:white;
-        text-align: center;
-        font_family: Arial;
-    }
-    .statistic{
-        color:#600587;
-        font-size: 22px;
+    .title {
+        font-size:20px !important;
         font-weight: bold;
-        text-align: center;
-        font_family: Arial;
+        color: #FFFFFF;
+        font-family: Arial;
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translate(-50%, 0);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .number{
+        font-size:20px !important;
+        font-weight: bold;
+        color: #5B006A;
+        font-family: Arial;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+    }
+    .subtitle{
+        font-size:18px !important;
+        font-weight: normal;
+        color: #5B006A;
+        font-family: Arial;
+        position: absolute;
+        bottom: 0;
+        left: 50%;
+        transform: translate(-50%, 0);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
     .Card{
-
-        border: 1px solid #ccc; 
-        padding: 0px; 
+        border: 2px solid #ccc;
+        padding: 15px;
         margin:0px;
-        border-radius: 25px; 
-        background-color: #EACDFF;
+        border-radius: 30px;
+        background: linear-gradient(to right, #EACDFF, #fff);
+        box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
         width: 150px;
         height: 150px;
         text-align: center;
-
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+        flex-direction: column;
     }
     .Card .top-part {
         background-color: #600587;  /* Change this to the color you want */
         height: 25%;  /* This represents the top 20% of the card */
         width: 100%;
-        border-radius: 23px 23px 0 0;  /* Rounded corners at the top */
-        padding: 0;  /* Remove padding */
-        margin: 0;  /* Remove margin */
+        border-radius: 28px 28px 0 0;  /* Rounded corners at the top */
+        position: absolute;
+        top: 0;
+        left: 0;
     }
+    .high-priority {
+            background-color: red;
+            width: 315px;
+            height: 199px;
+            border: 2px solid #ccc;
+            padding: 3px;
+            border-radius: 30px;
+            text-align: center;
+            display: flex;
+            justify-content: space-between;
+        }
+    .high-priority-text {
+            position: absolute;
+            bottom: 1px;
+            left: 30%;
+            transform: translateX(50%);
+            font-size: 22px;
+            color: white;
+            font-weight: bold;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
     .main-box {
         display: flex;
       justify-content: space-around;
@@ -71,14 +121,12 @@ def setup_page():
     }
     .priority-box.high,
     .priority-box.critical {
-      background-color: #EACDFF; 
-      text-align: center; 
+      background-color: #EACDFF;
+      text-align: center;
     }
     </style>
     """, unsafe_allow_html=True)
-    st.markdown('<h2 class="title">Vulnerabilities(YTD)</h2>', unsafe_allow_html=True)
-
-
+    st.markdown('<h2 class="page-title">Vulnerabilities(YTD)</h2>', unsafe_allow_html=True)
 @st.cache_data
 def process_file(file: str) -> DataFrame:
     """
@@ -219,6 +267,8 @@ def dashboard_service():
 
 if __name__ == "__main__":
     setup_page()
+
+    st.sidebar.image("STC.png" ,width=200)
 
     page = st.sidebar.selectbox('Navigation', ['AI Solution', 'Dashboard'])
     if page == 'AI Solution':

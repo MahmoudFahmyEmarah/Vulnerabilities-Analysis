@@ -18,38 +18,38 @@ def kpi(df: DataFrame):
         st.markdown(f"""
             <div class ="Card">
                 <div class="top-part">
-                    <h3 class ="text">Total</h3>
+                    <div class="title">Total</div>
                 </div>
-                <h4 class ="statistic">{total}</h4>
-                <h5 class ="statistic">164 Servers</h5>
+                <div class="number">{total}</div>
+                <div class="subtitle">164 Servers</div>
             </div>
         """, unsafe_allow_html=True)
-    with col2:
-        critical = (df['Severity'] == 'Critical').sum()
-        st.markdown(f"""
-                     <div class ="Card" style="background-color: #FF0000;">
-                            <h3 class ="text">Critical</h3>
-                            <h4 class ="text" >{critical}</h4>
-               </div>
-                   """, unsafe_allow_html=True)
-    with col3:
-        high = (df['Severity'] == 'High').sum()
-        st.markdown(f"""
-                     <div class ="Card" style="background-color: #FF0000;">
-                      <h3 class ="text">High</h3>
-                       <h4 class ="text" >{high}</h4>
-               </div>
 
-                   """, unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"""
+            <div class="high-priority" style="background-color: red;">
+                <div class="Card">
+                    <div class="top-part"></div>
+                    <div class="title">Critical</div>
+                    <div class="number">{(df['Severity'] == 'Critical').sum()}</div>
+                </div>
+                <div class="Card">
+                    <div class="top-part"></div>
+                    <div class="title">High</div>
+                    <div class="number">{(df['Severity'] == 'High').sum()}</div>
+                </div>
+            </div>
+            <div class="high-priority-text">High Priority</div>
+        """, unsafe_allow_html=True)
     with col4:
         medium = (df['Severity'] == 'Medium').sum()
         st.markdown(f"""
                      <div class ="Card">
                      <div class="top-part">
-                      <h3 class ="text">Medium</h3>
+                      <div class ="title">Medium</div>
                       </div>
-                       <h4 class ="statistic" >{medium}</h4>
-                       <h5 class ="statistic">20 Servers</h4>
+                       <div class ="number" >{medium}</div>
+                       <div class ="subtitle">20 Servers</div>
                </div>
 
                    """, unsafe_allow_html=True)
@@ -58,10 +58,10 @@ def kpi(df: DataFrame):
         st.markdown(f"""
                      <div class ="Card">
                         <div class="top-part">
-                      <h3 class ="text">Low</h3>
+                      <div class ="title">Low</div>
                         </div>
-                       <h4 class ="statistic">{low}</h4>
-                        <h5 class ="statistic">132 Servers</h4>
+                       <div class ="number">{low}</div>
+                        <div class ="subtitle">132 Servers</div>
                </div>
 
                    """, unsafe_allow_html=True)
@@ -86,9 +86,9 @@ def kpi(df: DataFrame):
         st.markdown(f"""
                   <div class ="Card">
                         <div class="top-part">
-                      <h3 class ="text">Within SLA</h3>
+                      <div class ="title">Within SLA</div>
                         </div>
-                      <h4 class ="statistic" >{(df['WithSLA'] == 'WithSLA').sum()}</h4>
+                      <div class ="number" >{(df['WithSLA'] == 'WithSLA').sum()}</div>
                   </div>
 
                     """, unsafe_allow_html=True)
@@ -96,9 +96,9 @@ def kpi(df: DataFrame):
         st.markdown(f"""
                             <div class ="Card">
                                 <div class="top-part">
-                                <h3 class ="text">Breach SLA</h3>
+                                <div class ="title">Breach SLA</div>
                                 </div>
-                                <h4 class ="statistic" >{(df['WithSLA'] == 'Non-Compliant').sum()}</h4>
+                                <div class ="number" >{(df['WithSLA'] == 'Non-Compliant').sum()}</div>
                             </div>
 
                               """, unsafe_allow_html=True)
@@ -281,4 +281,24 @@ def platforms_close_to_sla_table(df: DataFrame):
 
     # Filter 'WithSLA' column to only include rows where the value is 'withSLA'
     specific_columns = specific_columns[specific_columns['WithSLA'] == 'WithSLA']
-    st.table(specific_columns.reset_index(drop=True))
+
+    # Create a container for the table and the pagination controls
+    container = st.container()
+
+    # Create columns for the previous page and next page buttons
+    prev_col, _, next_col = st.columns([1, 8, 1])
+
+    # Calculate the total number of pages
+    total_pages = len(specific_columns) // 10
+    if len(specific_columns) % 10 > 0:
+        total_pages += 1
+
+    # Get the current page number from the number input (default is 1)
+    page_number = st.number_input(label="Page Number", min_value=1, max_value=total_pages, value=1, step=1)
+
+    # Calculate the start and end indices for the rows on the current page
+    start = (page_number - 1) * 10
+    end = start + 10
+
+    # Display the table for the current page
+    container.table(specific_columns.iloc[start:end].reset_index(drop=True))
