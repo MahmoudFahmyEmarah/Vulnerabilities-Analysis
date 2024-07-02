@@ -4,6 +4,7 @@ from pandas import DataFrame
 from plotly import graph_objects as go
 import plotly.express as px
 
+
 #TODO we need to move any preprocessing on the df to the preprocessing.py file to save the preprocessed file and load it here
 def kpi(df: DataFrame):
     """
@@ -138,35 +139,38 @@ def vulnerabilities_per_month(df):
 
 
 def vulnerabilities_by_server(df):
-    st.markdown('<h2 class="plot-title">Vulnerable by Severity </h2>', unsafe_allow_html=True)
+    # Define the order of the categories
+    severity_order = ['Critical', 'High', 'Medium', 'Low', 'Minimal']
 
-    # Calculate total number of entries
-    total_entries = len(df)
+    # Create an ordered categorical data type for the 'Severity' column
+    df['Severity'] = pd.Categorical(df['Severity'], categories=severity_order, ordered=True)
+
+    # Sort the DataFrame by the 'Severity' column
+    df = df.sort_values('Severity')
 
     # Calculate counts for each severity level
-    severity_counts = df['Severity'].value_counts()
+    severity_counts = df['Severity'].value_counts(sort=False)
 
-    # Calculate percentages for 'low', 'high', and 'critical'
-    percentage_low = (severity_counts.get('Low', 0) / total_entries) * 100
-    percentage_high = (severity_counts.get('High', 0) / total_entries) * 100
-    percentage_critical = (severity_counts.get('Critical', 0) / total_entries) * 100
-    percentage_Medium = (severity_counts.get('Medium', 0) / total_entries) * 100
-    percentage_Minimal = (severity_counts.get('Minimal', 0) / total_entries) * 100
-    color_map = {'Minimal': 'green', 'Low': '#6ED99D', 'Medium': 'orange', 'High': '#FF375E', 'Critical': 'red'}
-
-    plot_data = pd.DataFrame({
-        'Severity': ['Low', 'High', 'Critical', 'Medium', 'Minimal'],
-        'Percentage': [percentage_low, percentage_high, percentage_critical, percentage_Medium, percentage_Minimal]
-    })
+    colors = [
+        'red' if severity == 'Critical' else '#FF375E' if severity == 'High' else 'orange' if severity == 'Medium' else '#6ED99D' if severity == 'Low' else 'green'
+        for severity in severity_counts.index]
 
     # Create a pie chart using Plotly Express
-    fig = px.pie(plot_data, values='Percentage', names='Severity',
-                 labels={'Percentage': 'Percentage (%)'}, hover_data=['Percentage'], color_discrete_map=color_map
-                 )
+    fig = go.Figure(data=[go.Pie(labels=severity_counts.index,
+                                 values=severity_counts.values,
+                                 textinfo='label+percent',
+                                 insidetextorientation='radial',
+                                 textposition='outside',
+                                 marker=dict(colors=colors)
+                                 )])
+
+    # Update the layout of the chart
+    fig.update_layout(
+        title="<span style='color:#600587; font-size:20px'>Vulnerabilities by Severity</span>",
+    )
 
     # Display the chart using Streamlit
     st.plotly_chart(fig)
-
 
 
 def vulnerabilities_per_platform(df: DataFrame):

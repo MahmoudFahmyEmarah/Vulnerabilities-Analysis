@@ -104,7 +104,7 @@ def setup_page():
         }
     .high-priority-text {
             position: absolute;
-            bottom: 1px;
+            bottom: -7px;
             left: 30%;
             transform: translateX(50%);
             font-size: 22px;
@@ -167,7 +167,6 @@ def process_file(file: str) -> DataFrame:
         # Filter out rows that do not contain specific keywords in the Applications column
         keywords = ["Nifi", "CDP", "Airflow", "R-Studio", "Git"]
         df = df[df['Applications'].str.contains('|'.join(keywords), na=False)]
-        print(df.head())
         return df
     except Exception as e:
         st.error(f"Error processing file: {e}")
@@ -200,7 +199,6 @@ def apply_filters(df: DataFrame):
     :param df: type: DataFrame
     :return:df type: DataFrame
     """
-    print("Datafram of apply_filters", df['Severity'].value_counts())
     st.sidebar.header("Filters")
 
     applications = df['Applications'].unique()
@@ -231,20 +229,17 @@ def create_dashboard(df: DataFrame):
     :param df:
     :return:
     """
-    print("Datafram of create_dashboard", df['Severity'].value_counts())
     kpi(df)
     statistics(df)
     vulnerabilities_per_month(df)
-    vulnerabilities_by_server(df)
-
     vulnerabilities_per_platform(df)
     severity_distribution_by_platform(df)
     col1, col2 = st.columns(2)
     with col1:
         closure_status(df)
-
     with col2:
-        most_non_compliant_platforms(df)
+        vulnerabilities_by_server(df)
+    most_non_compliant_platforms(df)
     platforms_close_to_sla_table(df)
 
 
@@ -263,12 +258,10 @@ def dashboard_service():
 
         if os.path.exists(processed_filename):
             df = pd.read_csv(processed_filename)
-            print("new", df['Severity'].value_counts())
 
         else:
             # Process the file and cache the result
             df = process_file(uploaded_file)
-            print("old", df['Severity'].value_counts())
 
             if df.empty:
                 st.stop()  # Stop execution if DataFrame is empty
