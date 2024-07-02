@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 from pandas import DataFrame
 from plotly import graph_objects as go
-
+import plotly.express as px
 
 #TODO we need to move any preprocessing on the df to the preprocessing.py file to save the preprocessed file and load it here
 def kpi(df: DataFrame):
@@ -102,6 +102,71 @@ def kpi(df: DataFrame):
                             </div>
 
                               """, unsafe_allow_html=True)
+
+
+def vulnerabilities_per_month(df):
+    st.markdown('<h2 class="plot-title">Vulnerable Trend by Month </h2>', unsafe_allow_html=True)
+    # Convert 'Date Last Found' to datetime
+
+    df['Date Last Found'] = pd.to_datetime(df['Date Last Found'])
+    df['Date Last Found'] = pd.to_datetime(df['Date Last Found'], format='%Y-%m-%d')
+
+    df['month'] = df['Date Last Found'].dt.month
+    month_mapping = {
+        1: "January", 2: "February", 3: "March",
+        4: "April", 5: "May", 6: "June",
+        7: "July", 8: "August", 9: "September",
+        10: "October", 11: "November", 12: "December"
+    }
+    # Extract month from 'Date Last Found' and map to month names
+
+    df['month'] = df['month'].map(month_mapping)
+
+    # Calculate counts of Applications per month and severity
+    count_data = df.groupby(['month', 'Severity']).size().reset_index(name='Count')
+
+    # Define color map for Severity levels
+    color_map = {'Minimal': 'green', 'Low': '#6ED99D', 'Medium': 'orange', 'High': '#FF375E', 'Critical': 'red'}
+
+    # Create a bar chart using Plotly Express
+    fig = px.bar(count_data, x="month", y="Count", color='Severity',
+                 height=400, color_discrete_map=color_map,
+                 labels={'month': 'Month', 'Count': 'Number of Applications', 'Severity': 'Severity'})
+
+    # Display the chart using Streamlit
+    st.plotly_chart(fig)
+
+
+def vulnerabilities_by_server(df):
+    st.markdown('<h2 class="plot-title">Vulnerable by Severity </h2>', unsafe_allow_html=True)
+
+    # Calculate total number of entries
+    total_entries = len(df)
+
+    # Calculate counts for each severity level
+    severity_counts = df['Severity'].value_counts()
+
+    # Calculate percentages for 'low', 'high', and 'critical'
+    percentage_low = (severity_counts.get('Low', 0) / total_entries) * 100
+    percentage_high = (severity_counts.get('High', 0) / total_entries) * 100
+    percentage_critical = (severity_counts.get('Critical', 0) / total_entries) * 100
+    percentage_Medium = (severity_counts.get('Medium', 0) / total_entries) * 100
+    percentage_Minimal = (severity_counts.get('Minimal', 0) / total_entries) * 100
+    color_map = {'Minimal': 'green', 'Low': '#6ED99D', 'Medium': 'orange', 'High': '#FF375E', 'Critical': 'red'}
+
+    plot_data = pd.DataFrame({
+        'Severity': ['Low', 'High', 'Critical', 'Medium', 'Minimal'],
+        'Percentage': [percentage_low, percentage_high, percentage_critical, percentage_Medium, percentage_Minimal]
+    })
+
+    # Create a pie chart using Plotly Express
+    fig = px.pie(plot_data, values='Percentage', names='Severity',
+                 labels={'Percentage': 'Percentage (%)'}, hover_data=['Percentage'], color_discrete_map=color_map
+                 )
+
+    # Display the chart using Streamlit
+    st.plotly_chart(fig)
+
 
 
 def vulnerabilities_per_platform(df: DataFrame):

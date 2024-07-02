@@ -6,7 +6,7 @@ from pandas import DataFrame
 
 from plots import kpi, vulnerabilities_per_platform, closure_status, platforms_close_to_sla_table, \
     most_non_compliant_platforms, statistics, \
-    severity_distribution_by_platform
+    severity_distribution_by_platform, vulnerabilities_per_month, vulnerabilities_by_server
 from ai_solution import ai_solution
 
 
@@ -20,6 +20,12 @@ def setup_page():
     <style>
         .page-title {
         font-size:24px !important;
+        font-weight: bold;
+        color: #5B006A;
+        font-family: Arial;
+    }
+    .plot-title {
+        font-size:20px !important;
         font-weight: bold;
         color: #5B006A;
         font-family: Arial;
@@ -127,6 +133,8 @@ def setup_page():
     </style>
     """, unsafe_allow_html=True)
     st.markdown('<h2 class="page-title">Vulnerabilities(YTD)</h2>', unsafe_allow_html=True)
+
+
 @st.cache_data
 def process_file(file: str) -> DataFrame:
     """
@@ -159,7 +167,7 @@ def process_file(file: str) -> DataFrame:
         # Filter out rows that do not contain specific keywords in the Applications column
         keywords = ["Nifi", "CDP", "Airflow", "R-Studio", "Git"]
         df = df[df['Applications'].str.contains('|'.join(keywords), na=False)]
-
+        print(df.head())
         return df
     except Exception as e:
         st.error(f"Error processing file: {e}")
@@ -192,6 +200,7 @@ def apply_filters(df: DataFrame):
     :param df: type: DataFrame
     :return:df type: DataFrame
     """
+    print("Datafram of apply_filters", df['Severity'].value_counts())
     st.sidebar.header("Filters")
 
     applications = df['Applications'].unique()
@@ -222,8 +231,12 @@ def create_dashboard(df: DataFrame):
     :param df:
     :return:
     """
+    print("Datafram of create_dashboard", df['Severity'].value_counts())
     kpi(df)
     statistics(df)
+    vulnerabilities_per_month(df)
+    vulnerabilities_by_server(df)
+
     vulnerabilities_per_platform(df)
     severity_distribution_by_platform(df)
     col1, col2 = st.columns(2)
@@ -250,10 +263,12 @@ def dashboard_service():
 
         if os.path.exists(processed_filename):
             df = pd.read_csv(processed_filename)
+            print("new", df['Severity'].value_counts())
 
         else:
             # Process the file and cache the result
             df = process_file(uploaded_file)
+            print("old", df['Severity'].value_counts())
 
             if df.empty:
                 st.stop()  # Stop execution if DataFrame is empty
@@ -268,7 +283,7 @@ def dashboard_service():
 if __name__ == "__main__":
     setup_page()
 
-    st.sidebar.image("STC.png" ,width=200)
+    st.sidebar.image("STC.png", width=200)
 
     page = st.sidebar.selectbox('Navigation', ['AI Solution', 'Dashboard'])
     if page == 'AI Solution':
