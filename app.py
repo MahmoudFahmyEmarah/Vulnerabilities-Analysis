@@ -6,7 +6,7 @@ from pandas import DataFrame
 
 from plots import kpi, vulnerabilities_per_platform, closure_status, platforms_close_to_sla_table, \
     most_non_compliant_platforms, statistics, \
-    severity_distribution_by_platform, vulnerabilities_per_month, vulnerabilities_by_server
+    severity_distribution_by_platform, vulnerabilities_per_month, vulnerabilities_by_server,app_os
 from ai_solution import ai_solution
 
 
@@ -237,10 +237,14 @@ def create_dashboard(df: DataFrame):
     col1, col2 = st.columns(2)
     with col1:
         closure_status(df)
+        app_os(df)
     with col2:
         vulnerabilities_by_server(df)
-    most_non_compliant_platforms(df)
+        most_non_compliant_platforms(df)
+
+
     platforms_close_to_sla_table(df)
+
 
 
 def dashboard_service():

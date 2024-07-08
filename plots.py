@@ -3,6 +3,8 @@ import streamlit as st
 from pandas import DataFrame
 from plotly import graph_objects as go
 import plotly.express as px
+import numpy as np
+
 
 
 #TODO we need to move any preprocessing on the df to the preprocessing.py file to save the preprocessed file and load it here
@@ -16,6 +18,7 @@ def kpi(df: DataFrame):
 
     with col1:
         total = len(df)
+
         st.markdown(f"""
             <div class ="Card">
                 <div class="top-part">
@@ -318,8 +321,8 @@ def statistics(df: DataFrame):
     :return:
     """
     # Display statistics about the shown DataFrame
-    sla_less_equal_3_days = ((df['SLA Remaining Days'] <= 3) & (df['SLA Remaining Days'] > 0)).sum()
-    sla_more_than_3_days = (df['SLA Remaining Days'] > 3).sum()
+    # sla_less_equal_3_days = ((df['SLA Remaining Days'] <= 3) & (df['SLA Remaining Days'] > 0)).sum()
+    # sla_more_than_3_days = (df['SLA Remaining Days'] > 3).sum()
     st.subheader("Statistics")
     stats = {
         "Total Records": len(df),
@@ -330,8 +333,8 @@ def statistics(df: DataFrame):
         "Low Vulnerabilities": (df['Severity'] == 'Low').sum(),
         "Minimal Vulnerabilities": (df['Severity'] == 'Minimal').sum(),
         "SLA Breached": (df['SLA Breached?'] == 'Non-Compliant').sum(),
-        "SLA <= 3 Days": sla_less_equal_3_days,
-        "SLA > 3 Days": sla_more_than_3_days,
+        # "SLA <= 3 Days": sla_less_equal_3_days,
+        # "SLA > 3 Days": sla_more_than_3_days,
 
     }
     stats_df = pd.DataFrame(list(stats.items()), columns=['Statistic', 'Value'])
@@ -371,3 +374,39 @@ def platforms_close_to_sla_table(df: DataFrame):
 
     # Display the table for the current page
     container.table(specific_columns.iloc[start:end].reset_index(drop=True))
+
+
+
+def app_os(df:DataFrame):
+    red_hat_count = 0
+    # Iterate through rows and update 'Title' column
+    for index, row in df.iterrows():
+        if 'Red Hat' in row['Title']:
+            df.at[index, 'Title'] = 'Red Hat'
+            red_hat_count += 1
+        else:
+            df.at[index, 'Title'] = 'Other'
+
+
+    # Initialize counts
+    red_hat_count = df[df['Title'].str.contains('Red Hat', case=False)].shape[0]
+    other_count = df.shape[0] - red_hat_count
+
+    # Create labels and values for pie chart
+    labels = ['OS', 'Apllication']
+    values = [red_hat_count, other_count]
+    colors = ['#6ED99D', '#ee2400']  # Custom colors for Red Hat and Other
+
+    # Create pie chart
+    fig = go.Figure(data=[go.Pie(labels=labels,
+                                 values=values,
+                                 textinfo='label+percent',
+                                 insidetextorientation='radial',
+                                 textposition='outside',
+                                 marker=dict(colors=colors)
+                                 )])
+
+    fig.update_layout(
+        title="<span style='color:#600587; font-size:20px'>Apllication vs OS</span>",
+    )
+    st.plotly_chart(fig)
