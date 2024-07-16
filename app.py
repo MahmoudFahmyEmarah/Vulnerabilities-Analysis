@@ -136,14 +136,16 @@ def setup_page():
 
 
 @st.cache_data
-def process_file(file: str) -> DataFrame:
+
+# Function to process the file from a given file path
+def process_file(file_path: str) -> DataFrame:
     """
-    Process the uploaded file and return the processed DataFrame
-    :param file:
+    Process the file from the specified path and return the processed DataFrame
+    :param file_path: Path to the Excel file
     :return: df
     """
     try:
-        df = pd.read_excel(file)
+        df = pd.read_excel(file_path)
         columns_to_remove = [
             'General Department Name', 'Department', 'Application Delegate', 'Section Manager',
             'Last Scan Date Time', 'Last Vulnerability Authenticated Scanned Date Time',
@@ -174,23 +176,28 @@ def process_file(file: str) -> DataFrame:
 
 
 # Function to save the processed DataFrame
-def save_processed_file(df: DataFrame, filename: str) -> str:
+# Function to save the processed DataFrame
+def save_processed_file(df: DataFrame, filename: str) -> None:
     try:
         processed_filename = f"processed_{filename}"
         df.to_csv(processed_filename, index=False)
-        return processed_filename
+        st.info(f"Processed file saved as {processed_filename}")
     except Exception as e:
         st.error(f"Error saving file: {e}")
-        return None
+
+# Main function to process the file and display the results
 
 
-def upload_file():
-    """
-    Upload the vulnerabilities file (in the sidebar)
-    :return: uploaded_file
-    """
-    uploaded_file = st.sidebar.file_uploader("Upload Vulnerabilities Report", type="xlsx")
-    return uploaded_file
+
+
+# def upload_file():
+#     """
+#     Upload the vulnerabilities file (in the sidebar)
+#     :return: uploaded_file
+#     """
+#     uploaded_file = st.sidebar.file_uploader("Upload Vulnerabilities Report", type="xlsx")
+#
+#     return uploaded_file
 
 
 def apply_filters(df: DataFrame):
@@ -247,43 +254,58 @@ def create_dashboard(df: DataFrame):
 
 
 
-def dashboard_service():
+def dashboard_service(file_path: str):
     """
-    Main function to run the dashboard service
+    Main function to run the dashboard service with a specified file path
 
-    :return:
+    :param file_path: Path to the Excel file
     """
-    uploaded_file = upload_file()
-
-    if uploaded_file:
+    try:
         # Check if a processed file already exists
-        filename = uploaded_file.name
+        filename = os.path.basename(file_path)
         processed_filename = f"processed_{filename}"
 
         if os.path.exists(processed_filename):
             df = pd.read_csv(processed_filename)
-
         else:
             # Process the file and cache the result
-            df = process_file(uploaded_file)
+            df = process_file(file_path)
 
             if df.empty:
-                st.stop()  # Stop execution if DataFrame is empty
+                st.error("Processed DataFrame is empty.")
+                return
+
             # Save the processed DataFrame to a file
             save_processed_file(df, filename)
 
-        # Apply filters
+        # Apply filters if needed
         df = apply_filters(df)
+
+        # Create and display the dashboard
         create_dashboard(df)
 
+    except Exception as e:
+        st.error(f"Error: {e}")
 
 if __name__ == "__main__":
     setup_page()
 
     st.sidebar.image("STC.png", width=200)
-
+    main_bg = """
+            <style>
+            body {
+                background-color: #f0f0f0;
+            }
+            </style>
+            """
+    st.markdown(main_bg, unsafe_allow_html=True)
     page = st.sidebar.selectbox('Navigation', ['AI Solution', 'Dashboard'])
     if page == 'AI Solution':
-        ai_solution()
+        file_path = "C:/Users/fahda/Downloads/new.xlsx"
+        dashboard_service(file_path)
+
     elif page == 'Dashboard':
-        dashboard_service()
+        file_path = "C:/Users/fahda/Downloads/Detailed_Vulnerabilities_Report.xlsx"
+        dashboard_service(file_path)
+
+
