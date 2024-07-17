@@ -1,14 +1,19 @@
+import base64
+
 import streamlit as st
 import pandas as pd
 import os
 
+from matplotlib import pyplot as plt
 from pandas import DataFrame
+from pygments.lexers import go
 
-from plots import kpi, vulnerabilities_per_platform, closure_status, platforms_close_to_sla_table, \
-    most_non_compliant_platforms, statistics, \
+from plots import kpi, vulnerabilities_per_platform, closure_status, \
+    most_non_compliant_platforms, statistics, compare_data,display_kpi,\
     severity_distribution_by_platform, vulnerabilities_per_month, vulnerabilities_by_server,app_os
 from ai_solution import ai_solution
-
+from plotly import graph_objects as go
+import plotly.express as px
 
 def setup_page():
     """
@@ -21,13 +26,13 @@ def setup_page():
         .page-title {
         font-size:24px !important;
         font-weight: bold;
-        color: #5B006A;
+        color: #FFFFFF;
         font-family: Arial;
     }
     .plot-title {
         font-size:20px !important;
         font-weight: bold;
-        color: #5B006A;
+        color: #FFFFFF;
         font-family: Arial;
     }
     .title {
@@ -73,7 +78,7 @@ def setup_page():
         border-radius: 30px;
         background: linear-gradient(to right, #EACDFF, #fff);
         box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
-        width: 150px;
+        width: 170px;
         height: 150px;
         text-align: center;
         display: flex;
@@ -81,6 +86,7 @@ def setup_page():
         align-items: center;
         position: relative;
         flex-direction: column;
+
     }
     .Card .top-part {
         background-color: #600587;  /* Change this to the color you want */
@@ -207,7 +213,6 @@ def apply_filters(df: DataFrame):
     :return:df type: DataFrame
     """
     st.sidebar.header("Filters")
-
     applications = df['Applications'].unique()
     selected_application = st.sidebar.selectbox("Filter by Application", options=["All"] + list(applications))
 
@@ -250,7 +255,6 @@ def create_dashboard(df: DataFrame):
         most_non_compliant_platforms(df)
 
 
-    platforms_close_to_sla_table(df)
 
 
 
@@ -287,25 +291,52 @@ def dashboard_service(file_path: str):
     except Exception as e:
         st.error(f"Error: {e}")
 
+
+
+
+
+
+
+
+
+
 if __name__ == "__main__":
     setup_page()
 
     st.sidebar.image("STC.png", width=200)
+
     main_bg = """
             <style>
-            body {
-                background-color: #f0f0f0;
+            [data-testid="stAppViewContainer"]{
+                background-color: #7233A3;
+            }
+           
+            [data-testid="stHeader"] {
+             z-index: 0;
+}
+            [data-testid="stToolbar"]{
+                display: none;
             }
             </style>
             """
     st.markdown(main_bg, unsafe_allow_html=True)
-    page = st.sidebar.selectbox('Navigation', ['AI Solution', 'Dashboard'])
-    if page == 'AI Solution':
+    page = st.sidebar.selectbox('Navigation', ['Week1', 'Week2',"Compare"])
+    if page == 'Week1':
         file_path = "C:/Users/fahda/Downloads/new.xlsx"
         dashboard_service(file_path)
 
-    elif page == 'Dashboard':
+    elif page == 'Week2':
         file_path = "C:/Users/fahda/Downloads/Detailed_Vulnerabilities_Report.xlsx"
         dashboard_service(file_path)
+
+    elif page =="Compare":
+        file_path_week1 = "C:/Users/fahda/Downloads/new.xlsx"
+        file_path_week2 = "C:/Users/fahda/Downloads/Detailed_Vulnerabilities_Report.xlsx"
+
+        data_week1 = process_file(file_path_week1)
+        data_week2 = process_file(file_path_week2)
+
+        compare_data(data_week1, data_week2)
+
 
 

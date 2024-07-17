@@ -109,7 +109,6 @@ def kpi(df: DataFrame):
 
 
 def vulnerabilities_per_month(df):
-    st.markdown('<h2 class="plot-title">Vulnerable Trend by Month </h2>', unsafe_allow_html=True)
     # Convert 'Date Last Found' to datetime
 
     df['Date Last Found'] = pd.to_datetime(df['Date Last Found'])
@@ -136,6 +135,20 @@ def vulnerabilities_per_month(df):
     fig = px.bar(count_data, x="month", y="Count", color='Severity',
                  height=400, color_discrete_map=color_map,
                  labels={'month': 'Month', 'Count': 'Number of Applications', 'Severity': 'Severity'})
+    fig.update_xaxes(tickfont_color='#FFFFFF')
+    fig.update_yaxes(tickfont_color='#FFFFFF')
+    fig.update_layout({
+        'title': "<span style='color:#FFFFFF; font-size:20px ; text-align:left;'>Vulnerabilities by Month </span>",
+        'plot_bgcolor': '#7233A3',  # Background color for the plot area
+        'paper_bgcolor': '#7233A3' , # Black background for the plot area with 0.7 transparency
+        'legend': {
+        'title': {
+            'font': {'color': '#FFFFFF'}  # Set legend title color
+        },
+        'font': {'color': '#FFFFFF'}  # Set legend text color
+    }
+
+    })
 
     # Display the chart using Streamlit
     st.plotly_chart(fig)
@@ -168,8 +181,22 @@ def vulnerabilities_by_server(df):
                                  )])
 
     # Update the layout of the chart
-    fig.update_layout(
-        title="<span style='color:#600587; font-size:20px'>Vulnerabilities by Severity</span>",
+    fig.update_xaxes(color='#FFFFFF')
+    fig.update_yaxes(color='#FFFFFF')
+    fig.update_layout({
+        'title': "<span style='color:#FFFFFF; font-size:20px ; text-align:left;'>Vulnerabilities by Severity </span>",
+        # 'plot_bgcolor': '#7233A3',  # Background color for the plot area
+        'paper_bgcolor': 'rgba(114, 51, 163, 1)',  # Purple background for the plot area with 0.4 opacity.
+        'font': dict(color='#FFFFFF'),  # Change all text color to white
+        'legend': {
+            'title': {
+                'font': {'color': '#FFFFFF'}  # Set legend title color
+            },
+            'font': {'color': '#FFFFFF'}  # Set legend text color
+        }
+
+    }
+
     )
 
     # Display the chart using Streamlit
@@ -202,10 +229,20 @@ def vulnerabilities_per_platform(df: DataFrame):
         go.Bar(x=keywords, y=df_not.groupby('Applications').size().reindex(keywords, fill_value=0),
                name='Non-Compliant', marker_color='#FF0000', width=0.1))
 
-    fig.update_layout(
-        title="<span style='color:#600587; font-size:20px'>Vulnerabilities per platform</span>",
-        xaxis_title='Platform',
-        yaxis_title='Values',
+    fig.update_xaxes(tickfont_color='#FFFFFF')
+    fig.update_yaxes(tickfont_color='#FFFFFF')
+    fig.update_layout({
+        'title': "<span style='color:#FFFFFF; font-size:20px ; text-align:left;'>Vulnerabilities by platform </span>",
+        'plot_bgcolor': '#7233A3',  # Background color for the plot area
+        'paper_bgcolor': 'rgba(114, 51, 163, 1)',  # Purple background for the plot area with 0.4 opacity
+        'legend': {
+            'title': {
+                'font': {'color': '#FFFFFF'}  # Set legend title color
+            },
+            'font': {'color': '#FFFFFF'}  # Set legend text color
+        }
+    }
+
     )
     st.plotly_chart(fig)
 
@@ -256,11 +293,20 @@ def severity_distribution_by_platform(df: DataFrame):
                marker_color='red',
                width=0.1))
 
-    fig.update_layout(
-        title="<span style='color:#600587; font-size:20px'>Severity Distribution by Platform</span>",
-        xaxis_title='Platform',
-        yaxis_title='Values',
-    )
+    fig.update_xaxes(tickfont_color='#FFFFFF')
+    fig.update_yaxes(tickfont_color='#FFFFFF')
+    fig.update_layout({
+        'title': "<span style='color:#FFFFFF; font-size:20px ; text-align:left;'>Severity Distribution by Platform</span>",
+        'plot_bgcolor': '#7233A3',  # Background color for the plot area
+        'paper_bgcolor': 'rgba(114, 51, 163, 1)',  # Purple background for the plot area with 0.4 opacity
+        'legend': {
+            'title': {
+                'font': {'color': '#FFFFFF'}  # Set legend title color
+            },
+            'font': {'color': '#FFFFFF'}  # Set legend text color
+        }
+
+    })
     st.plotly_chart(fig)
 
 
@@ -284,11 +330,24 @@ def closure_status(df: DataFrame):
                                  marker=dict(colors=colors)
                                  )])
 
-    fig.update_layout(
-        title="<span style='color:#600587; font-size:20px'>Closure Status </span>",
-    )
+    fig.update_xaxes(tickfont_color='#FFFFFF')
+    fig.update_yaxes(tickfont_color='#FFFFFF')
+    fig.update_layout({
+        'title': "<span style='color:#FFFFFF; font-size:20px ; text-align:left;'>Closure Status</span>",
+        'plot_bgcolor': '#7233A3',  # Background color for the plot area
+        'paper_bgcolor': 'rgba(114, 51, 163, 1)',  # Purple background for the plot area with 0.4 opacity
+        'font': dict(color='#FFFFFF') , # Change all text color to white
+        'legend': {
+            'title': {
+                'font': {'color': '#FFFFFF'}  # Set legend title color
+            },
+            'font': {'color': '#FFFFFF'}  # Set legend text color
+        }
 
+    })
     st.plotly_chart(fig)
+
+
 
 
 def most_non_compliant_platforms(df: DataFrame):
@@ -304,14 +363,18 @@ def most_non_compliant_platforms(df: DataFrame):
     fig.add_trace(go.Bar(name='Applications', x=counts.index, y=counts.values,
                          marker_color='#6ED99D', width=0.3))
 
-    fig.update_layout(
-        title="<span style='color:#600587; font-size:20px'>Most Non-Compliant Platform</span>",
-        xaxis_title='Applications',
-        yaxis_title='Count',
-    )
+    fig.update_xaxes(tickfont_color='#FFFFFF')
+    fig.update_yaxes(tickfont_color='#FFFFFF')
+    fig.update_layout({
+        'title': "<span style='color:#FFFFFF; font-size:20px ; text-align:left;'>Most Non-Compliant Platform</span>",
+        'plot_bgcolor': '#7233A3',  # Background color for the plot area
+        'paper_bgcolor': 'rgba(114, 51, 163, 1)',  # Purple background for the plot area with 0.4 opacity
 
-    # Show the chart
+
+    })
     st.plotly_chart(fig)
+
+
 
 
 def statistics(df: DataFrame):
@@ -323,7 +386,9 @@ def statistics(df: DataFrame):
     # Display statistics about the shown DataFrame
     # sla_less_equal_3_days = ((df['SLA Remaining Days'] <= 3) & (df['SLA Remaining Days'] > 0)).sum()
     # sla_more_than_3_days = (df['SLA Remaining Days'] > 3).sum()
-    st.subheader("Statistics")
+
+
+    st.markdown("<h3 style='color:#FFFFFF'>Statistic</h2>", unsafe_allow_html=True)
     stats = {
         "Total Records": len(df),
         "Unique Applications": df['Applications'].nunique(),
@@ -338,42 +403,52 @@ def statistics(df: DataFrame):
 
     }
     stats_df = pd.DataFrame(list(stats.items()), columns=['Statistic', 'Value'])
-    st.table(stats_df.style.hide(axis='index'))
+    nn = """
+               <style>
+               .st-emotion-cache-fwan7u{
+                   color: #FFFFFF;
+                    font-size: 23px
+               }
+            
+               </style>
+               """
+    st.markdown(nn, unsafe_allow_html=True)
+    st.table(stats_df.style.set_properties(**{'background-color': '#7233A3', 'color': '#FFFFFF','font-size':'17px'}))
 
 
-def platforms_close_to_sla_table(df: DataFrame):
-    """
-    Display the platforms close to SLA in a table
-    :param df:
-    :return:
-    """
-    st.markdown('<h2 class="title">PlatForm Close to SLA</h2>', unsafe_allow_html=True)
-
-    specific_columns = df[['Applications', 'Title', 'WithSLA', 'Severity', "Days", "SLA Remaining Days"]]
-
-    # Filter 'WithSLA' column to only include rows where the value is 'withSLA'
-    specific_columns = specific_columns[specific_columns['WithSLA'] == 'WithSLA']
-
-    # Create a container for the table and the pagination controls
-    container = st.container()
-
-    # Create columns for the previous page and next page buttons
-    prev_col, _, next_col = st.columns([1, 8, 1])
-
-    # Calculate the total number of pages
-    total_pages = len(specific_columns) // 10
-    if len(specific_columns) % 10 > 0:
-        total_pages += 1
-
-    # Get the current page number from the number input (default is 1)
-    page_number = st.number_input(label="Page Number", min_value=1, max_value=total_pages, value=1, step=1)
-
-    # Calculate the start and end indices for the rows on the current page
-    start = (page_number - 1) * 10
-    end = start + 10
-
-    # Display the table for the current page
-    container.table(specific_columns.iloc[start:end].reset_index(drop=True))
+# def platforms_close_to_sla_table(df: DataFrame):
+#     """
+#     Display the platforms close to SLA in a table
+#     :param df:
+#     :return:
+#     """
+#     st.markdown('<h2 class="title">PlatForm Close to SLA</h2>', unsafe_allow_html=True)
+#
+#     specific_columns = df[['Applications', 'Title', 'WithSLA', 'Severity', "Days", "SLA Remaining Days"]]
+#
+#     # Filter 'WithSLA' column to only include rows where the value is 'withSLA'
+#     specific_columns = specific_columns[specific_columns['WithSLA'] == 'WithSLA']
+#
+#     # Create a container for the table and the pagination controls
+#     container = st.container()
+#
+#     # Create columns for the previous page and next page buttons
+#     prev_col, _, next_col = st.columns([1, 8, 1])
+#
+#     # Calculate the total number of pages
+#     total_pages = len(specific_columns) // 10
+#     if len(specific_columns) % 10 > 0:
+#         total_pages += 1
+#
+#     # Get the current page number from the number input (default is 1)
+#     page_number = st.number_input(label="Page Number", min_value=1, max_value=total_pages, value=1, step=1)
+#
+#     # Calculate the start and end indices for the rows on the current page
+#     start = (page_number - 1) * 10
+#     end = start + 10
+#
+#     # Display the table for the current page
+#     container.table(specific_columns.iloc[start:end].reset_index(drop=True))
 
 
 
@@ -406,7 +481,83 @@ def app_os(df:DataFrame):
                                  marker=dict(colors=colors)
                                  )])
 
-    fig.update_layout(
-        title="<span style='color:#600587; font-size:20px'>Apllication vs OS</span>",
-    )
+    fig.update_xaxes(color='#FFFFFF')
+    fig.update_yaxes(color='#FFFFFF')
+    fig.update_layout({
+        'title': "<span style='color:#FFFFFF; font-size:20px ; text-align:left;'>App VS OS</span>",
+        # 'plot_bgcolor': '#7233A3',  # Background color for the plot area
+        'paper_bgcolor': 'rgba(114, 51, 163, 1)',  # Purple background for the plot area with 0.4 opacity.
+        'font': dict(color='#FFFFFF'),  # Change all text color to white
+        'legend': {
+            'title': {
+                'font': {'color': '#FFFFFF'}  # Set legend title color
+            },
+            'font': {'color': '#FFFFFF'}  # Set legend text color
+        }
+
+    })
     st.plotly_chart(fig)
+
+
+
+
+
+
+
+def display_kpi(title, value, additional_info):
+    st.markdown(f"""
+        <div class="Card">
+            <div class="top-part">
+                <div class="title">{title}</div>
+            </div>
+            <div class="number">{value}</div>
+            <div class="subtitle">{additional_info}</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+
+
+
+def compare_data(data_week1, data_week2):
+    # Calculate counts for each severity level
+    severity_levels = ['Critical', 'High', 'Medium', 'Low', 'Minimal']
+    counts_week1 = {level: data_week1[data_week1['Severity'] == level].shape[0] for level in severity_levels}
+    counts_week2 = {level: data_week2[data_week2['Severity'] == level].shape[0] for level in severity_levels}
+
+    # Display KPIs/cards in the header
+
+
+    # Display KPIs for Week 1
+    col1, col2, col3, col4, col5,col6 = st.columns(6)
+
+    with col1:
+        display_kpi("Total", len(data_week2), f"{len(data_week1)} Week1")
+
+    with col2:
+        display_kpi("Critical Week 2", counts_week2['Critical'], f"{(data_week1['Severity'] == 'Critical').sum()} Week1")
+    with col3:
+        display_kpi("High Week 2", counts_week2['High'], f"{(data_week1['Severity'] == 'High').sum()} Week1")
+    with col4:
+        display_kpi("Medium Week 2", counts_week2['Medium'], f"{(data_week1['Severity'] == 'Medium').sum()} Week1")
+    with col5:
+        display_kpi("Low Week 2", counts_week2['Low'], f"{(data_week1['Severity'] == 'Low').sum()} Week1")
+    with col6:
+        display_kpi("Minimal Week 2", counts_week2['Minimal'], f"{(data_week1['Severity'] == 'Minimal').sum()} Week1")
+
+
+    fig = go.Figure(data=[
+        go.Bar(name='Week 1', x=severity_levels, y=[counts_week1[level] for level in severity_levels]),
+        go.Bar(name='Week 2', x=severity_levels, y=[counts_week2[level] for level in severity_levels])
+    ])
+
+    # Update layout and display the chart
+    fig.update_xaxes(tickfont_color='#FFFFFF')
+    fig.update_yaxes(tickfont_color='#FFFFFF')
+    fig.update_layout({
+        'title': "<span style='color:#FFFFFF; font-size:20px ; text-align:left;'>Severity Comparison Between Weeks</span>",
+        'plot_bgcolor': '#7233A3',  # Background color for the plot area
+        'paper_bgcolor': 'rgba(114, 51, 163, 1)',  # Purple background for the plot area with 0.4 opacity
+
+    })
+    st.plotly_chart(fig)
+

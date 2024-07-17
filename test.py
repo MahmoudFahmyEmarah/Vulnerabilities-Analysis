@@ -1,374 +1,149 @@
 import streamlit as st
 import pandas as pd
 import os
-from st_aggrid import AgGrid, GridOptionsBuilder
-import plotly.express as px
-import matplotlib.pyplot as plt
-from datetime import datetime
-import matplotlib.pyplot as plt
-# CSS code
-css_code = '''
-<style>
-.container {
-  padding: 20px;
-  width: 100px;
-  background-color: #fff5e1;
-  border-radius: 10px;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-}
+
+from pandas import DataFrame
+
+from plots import kpi, vulnerabilities_per_platform, closure_status, platforms_close_to_sla_table, \
+    most_non_compliant_platforms, statistics, \
+    severity_distribution_by_platform, vulnerabilities_per_month, vulnerabilities_by_server,app_os
+from ai_solution import ai_solution
 
 
-h1 {
-  color: #333333;
-}
-.container1 {
-      max-width: 800px;
-      margin: 0 auto;
+def setup_page():
+    """
+    Setup the page layout and styling
+    :return:
+    """
+    st.set_page_config(layout="wide")
+    st.markdown("""
+    <style>
+        .page-title {
+        font-size:24px !important;
+        font-weight: bold;
+        color: #5B006A;
+        font-family: Arial;
+    }
+    .plot-title {
+        font-size:20px !important;
+        font-weight: bold;
+        color: #5B006A;
+        font-family: Arial;
+    }
+    .title {
+        font-size:20px !important;
+        font-weight: bold;
+        color: #FFFFFF;
+        font-family: Arial;
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translate(-50%, 0);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .number{
+        font-size:20px !important;
+        font-weight: bold;
+        color: #5B006A;
+        font-family: Arial;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+    }
+    .subtitle{
+        font-size:18px !important;
+        font-weight: normal;
+        color: #5B006A;
+        font-family: Arial;
+        position: absolute;
+        bottom: 0;
+        left: 50%;
+        transform: translate(-50%, 0);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .Card{
+        border: 2px solid #ccc;
+        padding: 15px;
+        margin:0px;
+        border-radius: 30px;
+        background: linear-gradient(to right, #EACDFF, #fff);
+        box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
+        width: 150px;
+        height: 150px;
+        text-align: center;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+        flex-direction: column;
+    }
+    .Card .top-part {
+        background-color: #600587;  /* Change this to the color you want */
+        height: 25%;  /* This represents the top 20% of the card */
+        width: 100%;
+        border-radius: 28px 28px 0 0;  /* Rounded corners at the top */
+        position: absolute;
+        top: 0;
+        left: 0;
+    }
+    .high-priority {
+            background-color: red;
+            width: 315px;
+            height: 199px;
+            border: 2px solid #ccc;
+            padding: 3px;
+            border-radius: 30px;
+            text-align: center;
+            display: flex;
+            justify-content: space-between;
+        }
+    .high-priority-text {
+            position: absolute;
+            bottom: -7px;
+            left: 30%;
+            transform: translateX(50%);
+            font-size: 22px;
+            color: white;
+            font-weight: bold;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+    .main-box {
+        display: flex;
+      justify-content: space-around;
+      align-items: flex-end;
+      border-radius: 10px;
       padding: 20px;
-      background-color: #f0f0f0;
-      border: 1px solid #ccc;
+    }
+    .priority-box {
+      margin: 5px;
       border-radius: 5px;
-      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-      float:right;
 
     }
-
-.status {
-  margin-top: 20px;
-  font-size: 18px;
-  font-weight: bold;
-}
-
-.upload {
-  margin-top: 20px;
-}
-
-.button {
-  margin-top: 20px;
-  padding: 10px 20px;
-  background-color: #4caf50;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.button:hover {
-  background-color: #45a049;
-}
-
-.warning {
-  color: red;
-  font-weight: bold;
-  margin-top: 20px;
-}
-.container2 {
-    position: absolute;
-    right: -100px;
-    color: red;
-}
-.title{
-color:white;
-}
-</style>
-'''
-# HTML code
-html_code = f'''
-{css_code}
-
-
-'''
-
-st.set_page_config(layout="wide")
-st.markdown("""
-<style>
-.title {
-    font-size:24px !important;
-    font-weight: bold;
-    color: #5B006A;
-}
-.text{
-    color:white;
-    text-align: center;
-
-
-}
-.Card{
-
-    border: 1px solid #ccc; 
-    padding: 10px; 
-    margin:5px;
-    border-radius: 25px; 
-    background-color: #600587;
-    width: 150px;
-    height: 150px;
-
-}
-.Card2{
-    display:flex;
-    justify-content: space-between;
-    align-items: center;
-    border: 1px solid #ccc; 
-    padding: 10px; 
-    border-radius: 25px; 
-    background-color: #FF375E;
-
-}
-
-
-
-
-
-.main-box {
-    display: flex;
-  justify-content: space-around;
-  align-items: flex-end;
-  border-radius: 10px;
-  padding: 20px;
-
-
-}
-
-.priority-box {
-  margin: 5px;
-  border-radius: 5px;
-
-}
-
-.priority-box.high,
-.priority-box.critical {
-  background-color: #EACDFF; 
-  text-align: center; 
-}
-.Top {
- background-color: #5B006A;
- color: white;
-}
-</style>
-""", unsafe_allow_html=True)
-st.markdown('<h2 class="title">Vulnerabilities(YTD)</h2>', unsafe_allow_html=True)
-
-#KPI Fun to measurements Servity
-def KPI():
-    col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
-
-    # this col talk about KPI with servity , LOW , Medium , High ,Critical etc
-
-    with col1:
-        total = len(df)
-        st.markdown(f"""
-                     <div class ="Card">
-                      <h3 class ="text">Total</h3>
-                       <h4 class ="text">{total}</h4>
-                       <h5 class ="text">164 Servers</h4>
-
-
-
-               </div>
-
-                   """, unsafe_allow_html=True)
-    with col2:
-        critical = (df['Severity'] == 'Critical').sum()
-        st.markdown(f"""
-                     <div class ="Card">
-                            <h3 class ="text">Critical</h3>
-                            <h4 class ="text" >{critical}</h4>
-
-
-
-               </div>
-
-                   """, unsafe_allow_html=True)
-
-    with col3:
-        high = (df['Severity'] == 'High').sum()
-        st.markdown(f"""
-                     <div class ="Card">
-                      <h3 class ="text">High</h3>
-                       <h4 class ="text" >{high}</h4>
-
-
-
-               </div>
-
-                   """, unsafe_allow_html=True)
-    with col4:
-        medium = (df['Severity'] == 'Medium').sum()
-        st.markdown(f"""
-                     <div class ="Card">
-                      <h3 class ="text">Medium</h3>
-                       <h4 class ="text" >{medium}</h4>
-                       <h5 class ="text">20 Servers</h4>
-
-
-
-               </div>
-
-                   """, unsafe_allow_html=True)
-    with col5:
-        Low = (df['Severity'] == 'Low').sum()
-        st.markdown(f"""
-                     <div class ="Card">
-                      <h3 class ="text">Low</h3>
-                       <h4 class ="text">{Low}</h4>
-                        <h5 class ="text">132 Servers</h4>
-
-
-
-
-               </div>
-
-                   """, unsafe_allow_html=True)
-    with col6:
-        high = (df['Severity'] == 'High').sum()
-        critical = (df['Severity'] == 'Critical').sum()
-        st.markdown(f"""
-            <div class="Card2">
-                <div class="main-box">
-                    <div class="priority-box high">
-                        <span class="text">{critical}</span>
-                        <div class ="Top"> High
-                        </div>
-                    </div>
-                    <div class="priority-box critical">
-                        <span class="text">{high}</span>
-                        <div class ="Top"> Critical
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-
-            """, unsafe_allow_html=True)
-    #
-    #
-    #
-    # with col7:
-    #     #sub last data and first data to
-    #
-    #     df['Days'] = (pd.to_datetime(df['Date Last Found']) - pd.to_datetime(df['Date First Found'])).dt.days
-    #     df['WithSLA'] = 0
-    #
-    #     # Define conditions and update 'WithSLA'
-    #     #check for the days and make sure if it close to SLA or not , above 60 Days it not compliant .
-    #     df.loc[((df["Days"].between(4, 7)) & (df["Severity"] == "Critical")), 'WithSLA'] = 1
-    #     df.loc[((df["Days"].between(10, 14)) & (df["Severity"] == "High")), 'WithSLA'] = 1
-    #     df.loc[((df["Days"].between(20, 30)) & (df["Severity"] == "Medium")), 'WithSLA'] = 1
-    #     df.loc[((df["Days"].between(40, 45)) & (df["Severity"] == "Low")), 'WithSLA'] = 1
-    #     df.loc[((df["Days"].between(55, 60)) & (df["Severity"] == "Minimal")), 'WithSLA'] = 1
-    #     df.loc[((df["Days"].between(0, 100)) & (df["SLA Breached?"] == "Non-Compliant")), 'WithSLA'] = 2
-    #
-    #     df.loc[df['WithSLA'] == 0, 'WithSLA'] = "Closed"
-    #     df.loc[df['WithSLA'] == 1, 'WithSLA'] = "WithSLA"
-    #     df.loc[df['WithSLA'] == 2, 'WithSLA'] = "Non-Compliant"
-    #
-    #
-    #
-    #     st.markdown(f"""
-    #               <div class ="Card">
-    #                   <h3 class ="text">Close to SLA</h3>
-    #                   <h4 class ="text" >{ (df['WithSLA'] == 'WithSLA').sum() }</h4>
-    #               </div>
-    #
-    #                 """, unsafe_allow_html=True)
-    #
-    # with col7:
-    #     st.markdown(f"""
-    #                         <div class ="Card">
-    #                             <h4 class ="text">Branched SLA</h3>
-    #                             <h5 class ="text" >{(df['WithSLA'] == 'Non-Compliant').sum()}</h4>
-    #                         </div>
-    #
-    #                           """, unsafe_allow_html=True)
-
-
-
-def Vulnerabilities_chart(df):
-    # Vulnerabilities per platform Chart
-    fig = px.histogram(df, x='Applications', color='Overall Status',
-                       title="<span style='color:#600587; font-size:20px'>Vulnerabilities per platform</span>",
-                       category_orders={'Applications': df['Applications'].value_counts().index}
-                       )
-
-    # Show the chart
-    fig.update_layout(
-        width=1000,  # Width in pixels
-        height=600,  # Height in pixels
-    )
-    st.plotly_chart(fig)
-
-
-#Cluster Chart with any vulnerablities close to SLA
-def Cluster_status(df):
-    #Cluster Chart with any vulnerablities close to SLA
-    sla_counts = df['WithSLA'].value_counts()
-    fig = px.pie(names=sla_counts.index, values=sla_counts.values, labels=sla_counts.index,
-                 title="<span style='color:#600587; font-size:20px'>Cluster Status </span>", hole=0.3)
-    # Show the chart
-    st.plotly_chart(fig)
-
-def Platforms_chart(df):
-    st.markdown('<h2 class="title">PlatForm Close to SLA</h2>', unsafe_allow_html=True)
-
-
-    specific_columns = df[['Applications', 'Title', 'WithSLA', 'Severity',"Days","SLA Remaining Days"]]
-
-    # Filter 'WithSLA' column to only include rows where the value is 'withSLA'
-    specific_columns = specific_columns[specific_columns['WithSLA'] == 'WithSLA']
-    st.table(specific_columns.reset_index(drop=True))
-
-
-def Platform_chart_NonCompliant(df):
-
-    # Filter the   rows with 'WithSLA' containing 'Non-Compliant'
-    filtered_df = df[df['WithSLA'] == 'Non-Compliant']
-    counts = filtered_df['Applications'].value_counts()
-
-    fig = px.bar(x=counts.index, y=counts.values, labels={'x': 'Applications', 'y': 'Count'},title="<span style='color:#600587; font-size:20px'>Most Non Compliant Platform</span>")
-
-    # Show the chart
-    st.plotly_chart(fig)
-
-
-def statistics(df):
-
-    # Display statistics about the shown DataFrame
-    sla_less_equal_3_days = ((df['SLA Remaining Days'] <= 3) & (df['SLA Remaining Days'] > 0)).sum()
-    sla_more_than_3_days = (df['SLA Remaining Days'] > 3).sum()
-    st.subheader("Statistics")
-    stats = {
-        "Total Records": len(df),
-        "Unique Applications": df['Applications'].nunique(),
-        "Critical Vulnerabilities": (df['Severity'] == 'Critical').sum(),
-        "High Vulnerabilities": (df['Severity'] == 'High').sum(),
-        "Medium Vulnerabilities": (df['Severity'] == 'Medium').sum(),
-        "Low Vulnerabilities": (df['Severity'] == 'Low').sum(),
-        "Minimal Vulnerabilities": (df['Severity'] == 'Minimal').sum(),
-        "SLA Breached": (df['SLA Breached?'] == 'Non-Compliant').sum(),
-        "SLA <= 3 Days": sla_less_equal_3_days,
-        "SLA > 3 Days": sla_more_than_3_days,
-
+    .priority-box.high,
+    .priority-box.critical {
+      background-color: #EACDFF;
+      text-align: center;
     }
-    stats_df = pd.DataFrame(list(stats.items()), columns=['Statistic', 'Value'])
-    st.table(stats_df.style.hide(axis='index'))
+    </style>
+    """, unsafe_allow_html=True)
+    st.markdown('<h2 class="page-title">Vulnerabilities(YTD)</h2>', unsafe_allow_html=True)
 
 
-def Stacked_chart(df):
-    # Group by application and severity, and count occurrences
-    grouped_df = df.groupby(['Applications', 'Severity']).size().reset_index(name='count')
-
-    fig = px.bar(grouped_df, x='Applications', y='count', color='Severity',
-                 title="<span style='color:#600587; font-size:20px'>Severity Distribution by Application</span>",
-                 labels={'Applications': 'Application', 'count': 'Count'})
-
-    # Streamlit App
-    st.plotly_chart(fig)
 @st.cache_data
-def process_file(file):
+def process_file(file: str) -> DataFrame:
+    """
+    Process the uploaded file and return the processed DataFrame
+    :param file:
+    :return: df
+    """
     try:
         df = pd.read_excel(file)
-        df = df[df['Overall Status'] == 'Open']
-
         columns_to_remove = [
             'General Department Name', 'Department', 'Application Delegate', 'Section Manager',
             'Last Scan Date Time', 'Last Vulnerability Authenticated Scanned Date Time',
@@ -392,7 +167,6 @@ def process_file(file):
         # Filter out rows that do not contain specific keywords in the Applications column
         keywords = ["Nifi", "CDP", "Airflow", "R-Studio", "Git"]
         df = df[df['Applications'].str.contains('|'.join(keywords), na=False)]
-
         return df
     except Exception as e:
         st.error(f"Error processing file: {e}")
@@ -400,7 +174,7 @@ def process_file(file):
 
 
 # Function to save the processed DataFrame
-def save_processed_file(df, filename):
+def save_processed_file(df: DataFrame, filename: str) -> str:
     try:
         processed_filename = f"processed_{filename}"
         df.to_csv(processed_filename, index=False)
@@ -410,31 +184,22 @@ def save_processed_file(df, filename):
         return None
 
 
-
-# Upload the vulnerabilities file (in the sidebar)
-uploaded_file = st.sidebar.file_uploader("Upload Vulnerabilities Report", type="xlsx")
-
-if uploaded_file:
-    # Check if a processed file already exists
-    filename = uploaded_file.name
-    processed_filename = f"processed_{filename}"
-
-    if os.path.exists(processed_filename):
-        df = pd.read_csv(processed_filename)
-    else:
-        # Process the file and cache the result
-        df = process_file(uploaded_file)
-        if df.empty:
-            st.stop()  # Stop execution if DataFrame is empty
-        # Save the processed DataFrame to a file
-        save_processed_file(df, filename)
-
-    # call fun
-    # Create a dashboard for visualization
+def upload_file():
+    """
+    Upload the vulnerabilities file (in the sidebar)
+    :return: uploaded_file
+    """
+    uploaded_file1 = st.sidebar.file_uploader("Upload First Excel File", type="xlsx", key="file1")
+    uploaded_file2 = st.sidebar.file_uploader("Upload Second Excel File", type="xlsx", key="file2")
+    return uploaded_file1, uploaded_file2
 
 
-
-    # Add dropdowns to filter based on Applications and SLA Breached (in the sidebar)
+def apply_filters(df: DataFrame):
+    """
+    Apply filters to the DataFrame based on the selected options
+    :param df: type: DataFrame
+    :return:df type: DataFrame
+    """
     st.sidebar.header("Filters")
 
     applications = df['Applications'].unique()
@@ -455,41 +220,70 @@ if uploaded_file:
 
     if selected_severity != "All":
         df = df[df['Severity'] == selected_severity]
-    #Fun call
-    KPI()
+
+    return df
+
+
+def create_dashboard(df: DataFrame):
+    """
+    Create the dashboard with the given DataFrame
+    :param df:
+    :return:
+    """
+    kpi(df)
     statistics(df)
-    Vulnerabilities_chart(df)
-    Stacked_chart(df)
-    Cluster_status(df)
-    Platforms_chart(df)
-    Platform_chart_NonCompliant(df)
+    vulnerabilities_per_month(df)
+    vulnerabilities_per_platform(df)
+    severity_distribution_by_platform(df)
+    col1, col2 = st.columns(2)
+    with col1:
+        closure_status(df)
+        app_os(df)
+    with col2:
+        vulnerabilities_by_server(df)
+        most_non_compliant_platforms(df)
+
+
+    platforms_close_to_sla_table(df)
+
+
+
+def load_excel(file):
+    df = pd.read_excel(file)
+    return df
+def dashboard_service():
+    """
+    Main function to run the dashboard service
+
+    :return:
+    """
+
+    # Upload two Excel files
+    uploaded_file1, uploaded_file2 = upload_file()
+
+    if uploaded_file1 and uploaded_file2:
+        st.write("### Uploaded files:")
+        st.write(uploaded_file1.name if uploaded_file1 else "No file uploaded")
+        st.write(uploaded_file2.name if uploaded_file2 else "No file uploaded")
+
+        # Load Excel files into DataFrames
+        df1 = load_excel(uploaded_file1) if uploaded_file1 else None
+        df2 = load_excel(uploaded_file2) if uploaded_file2 else None
+
+        # Apply filters
+        df = apply_filters(df1)
+        create_dashboard(df1)
 
 
 
 
 
+if __name__ == "__main__":
+    setup_page()
 
+    st.sidebar.image("STC.png", width=200)
 
+    page = st.sidebar.selectbox('Navigation', ['AI Solution', 'Dashboard'])
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    dashboard_service()
 
