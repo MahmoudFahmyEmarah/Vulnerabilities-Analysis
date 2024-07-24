@@ -1,14 +1,17 @@
 import streamlit as st
 import pandas as pd
+import altair as alt
+from st_aggrid import AgGrid, GridOptionsBuilder
 import os
-
+from openai import OpenAI
+from dotenv import load_dotenv
+import json
 from pandas import DataFrame
-
 from plots import kpi, vulnerabilities_per_platform, closure_status, platforms_close_to_sla_table, \
     most_non_compliant_platforms, statistics, \
     severity_distribution_by_platform, vulnerabilities_per_month, vulnerabilities_by_server,app_os
 from ai_solution import ai_solution
-
+load_dotenv()
 
 def setup_page():
     """
@@ -234,13 +237,13 @@ def create_dashboard(df: DataFrame):
     vulnerabilities_per_month(df)
     vulnerabilities_per_platform(df)
     severity_distribution_by_platform(df)
-    col1, col2 = st.columns(2)
-    with col1:
-        closure_status(df)
-        app_os(df)
-    with col2:
-        vulnerabilities_by_server(df)
-        most_non_compliant_platforms(df)
+    #col1, col2 = st.columns(2)
+    #with col1:
+    closure_status(df)
+    app_os(df)
+    #with col2:
+    vulnerabilities_by_server(df)
+    most_non_compliant_platforms(df)
 
 
     platforms_close_to_sla_table(df)
@@ -282,7 +285,7 @@ if __name__ == "__main__":
 
     st.sidebar.image("STC.png", width=200)
 
-    page = st.sidebar.selectbox('Navigation', ['AI Solution', 'Dashboard'])
+    page = st.sidebar.selectbox('Navigation', ['AI Solution','Dashboard'])
     if page == 'AI Solution':
         ai_solution()
     elif page == 'Dashboard':
