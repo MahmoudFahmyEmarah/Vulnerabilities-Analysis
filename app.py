@@ -3,14 +3,150 @@ import pandas as pd
 import altair as alt
 from st_aggrid import AgGrid, GridOptionsBuilder
 import os
+from openai import OpenAI
+from dotenv import load_dotenv
+import json
+from pandas import DataFrame
+from plots import kpi, vulnerabilities_per_platform, closure_status, platforms_close_to_sla_table, \
+    most_non_compliant_platforms, statistics, \
+    severity_distribution_by_platform, vulnerabilities_per_month, vulnerabilities_by_server,app_os
+from ai_solution import ai_solution
+load_dotenv()
 
-# Function to process the uploaded file
+def setup_page():
+    """
+    Setup the page layout and styling
+    :return:
+    """
+    st.set_page_config(layout="wide")
+    st.markdown("""
+    <style>
+        .page-title {
+        font-size:24px !important;
+        font-weight: bold;
+        color: #5B006A;
+        font-family: Arial;
+    }
+    .plot-title {
+        font-size:20px !important;
+        font-weight: bold;
+        color: #5B006A;
+        font-family: Arial;
+    }
+    .title {
+        font-size:20px !important;
+        font-weight: bold;
+        color: #FFFFFF;
+        font-family: Arial;
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translate(-50%, 0);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .number{
+        font-size:20px !important;
+        font-weight: bold;
+        color: #5B006A;
+        font-family: Arial;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+    }
+    .subtitle{
+        font-size:18px !important;
+        font-weight: normal;
+        color: #5B006A;
+        font-family: Arial;
+        position: absolute;
+        bottom: 0;
+        left: 50%;
+        transform: translate(-50%, 0);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .Card{
+        border: 2px solid #ccc;
+        padding: 15px;
+        margin:0px;
+        border-radius: 30px;
+        background: linear-gradient(to right, #EACDFF, #fff);
+        box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2);
+        width: 150px;
+        height: 150px;
+        text-align: center;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+        flex-direction: column;
+    }
+    .Card .top-part {
+        background-color: #600587;  /* Change this to the color you want */
+        height: 25%;  /* This represents the top 20% of the card */
+        width: 100%;
+        border-radius: 28px 28px 0 0;  /* Rounded corners at the top */
+        position: absolute;
+        top: 0;
+        left: 0;
+    }
+    .high-priority {
+            background-color: red;
+            width: 315px;
+            height: 199px;
+            border: 2px solid #ccc;
+            padding: 3px;
+            border-radius: 30px;
+            text-align: center;
+            display: flex;
+            justify-content: space-between;
+        }
+    .high-priority-text {
+            position: absolute;
+            bottom: -7px;
+            left: 30%;
+            transform: translateX(50%);
+            font-size: 22px;
+            color: white;
+            font-weight: bold;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+    .main-box {
+        display: flex;
+      justify-content: space-around;
+      align-items: flex-end;
+      border-radius: 10px;
+      padding: 20px;
+    }
+    .priority-box {
+      margin: 5px;
+      border-radius: 5px;
+
+    }
+    .priority-box.high,
+    .priority-box.critical {
+      background-color: #EACDFF;
+      text-align: center;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    st.markdown('<h2 class="page-title">Vulnerabilities(YTD)</h2>', unsafe_allow_html=True)
+
+
 @st.cache_data
-def process_file(file):
+def process_file(file: str) -> DataFrame:
+    """
+    Process the uploaded file and return the processed DataFrame
+    :param file:
+    :return: df
+    """
     try:
         df = pd.read_excel(file)
-        df = df[df['Overall Status'] == 'Open']
-        
         columns_to_remove = [
             'General Department Name', 'Department', 'Application Delegate', 'Section Manager',
             'Last Scan Date Time', 'Last Vulnerability Authenticated Scanned Date Time',
@@ -18,7 +154,7 @@ def process_file(file):
             'Qualys ID', 'Port Number', 'Vulnerability Reference(s)', 'Related CVEs'
         ]
         df = df.drop(columns=columns_to_remove)
-        
+
         # Add SLA Remaining Days column
         sla_matrix = {
             'Critical': 7,
@@ -27,19 +163,21 @@ def process_file(file):
             'Low': 45,
             'Minimal': 60
         }
-        df['SLA Remaining Days'] = df.apply(lambda x: sla_matrix.get(x['Severity'], 0) - x['Ageing in Days'], axis=1)
-        
+
+        df['SLA Remaining Days'] = df.apply(lambda x: abs(sla_matrix.get(x['Severity'], 0) - x['Ageing in Days']),
+                                            axis=1)
+
         # Filter out rows that do not contain specific keywords in the Applications column
         keywords = ["Nifi", "CDP", "Airflow", "R-Studio", "Git"]
         df = df[df['Applications'].str.contains('|'.join(keywords), na=False)]
-        
         return df
     except Exception as e:
         st.error(f"Error processing file: {e}")
         return pd.DataFrame()  # Return an empty DataFrame on error
 
+
 # Function to save the processed DataFrame
-def save_processed_file(df, filename):
+def save_processed_file(df: DataFrame, filename: str) -> str:
     try:
         processed_filename = f"processed_{filename}"
         df.to_csv(processed_filename, index=False)
@@ -48,25 +186,22 @@ def save_processed_file(df, filename):
         st.error(f"Error saving file: {e}")
         return None
 
-# Upload the vulnerabilities file (in the sidebar)
-uploaded_file = st.sidebar.file_uploader("Upload Vulnerabilities Report", type="xlsx")
 
-if uploaded_file:
-    # Check if a processed file already exists
-    filename = uploaded_file.name
-    processed_filename = f"processed_{filename}"
+def upload_file():
+    """
+    Upload the vulnerabilities file (in the sidebar)
+    :return: uploaded_file
+    """
+    uploaded_file = st.sidebar.file_uploader("Upload Vulnerabilities Report", type="xlsx")
+    return uploaded_file
 
-    if os.path.exists(processed_filename):
-        df = pd.read_csv(processed_filename)
-    else:
-        # Process the file and cache the result
-        df = process_file(uploaded_file)
-        if df.empty:
-            st.stop()  # Stop execution if DataFrame is empty
-        # Save the processed DataFrame to a file
-        save_processed_file(df, filename)
 
-    # Add dropdowns to filter based on Applications and SLA Breached (in the sidebar)
+def apply_filters(df: DataFrame):
+    """
+    Apply filters to the DataFrame based on the selected options
+    :param df: type: DataFrame
+    :return:df type: DataFrame
+    """
     st.sidebar.header("Filters")
 
     applications = df['Applications'].unique()
@@ -76,7 +211,8 @@ if uploaded_file:
         df = df[df['Applications'] == selected_application]
 
     sla_breached_options = df['SLA Breached?'].unique()
-    selected_sla_breached = st.sidebar.selectbox("Filter by SLA Breached?", options=["All"] + list(sla_breached_options))
+    selected_sla_breached = st.sidebar.selectbox("Filter by SLA Breached?",
+                                                 options=["All"] + list(sla_breached_options))
 
     if selected_sla_breached != "All":
         df = df[df['SLA Breached?'] == selected_sla_breached]
@@ -87,94 +223,70 @@ if uploaded_file:
     if selected_severity != "All":
         df = df[df['Severity'] == selected_severity]
 
-    # Display the filtered DataFrame using AgGrid for interactivity
-    gb = GridOptionsBuilder.from_dataframe(df)
-    gb.configure_selection(selection_mode="single", use_checkbox=False)
+    return df
 
-    # Set the column widths and ensure they are wide enough to display the content
-    columns = df.columns
-    for column in columns:
-        gb.configure_column(column, width=200)  # Adjust the width as needed
 
-    grid_options = gb.build()
+def create_dashboard(df: DataFrame):
+    """
+    Create the dashboard with the given DataFrame
+    :param df:
+    :return:
+    """
+    kpi(df)
+    statistics(df)
+    vulnerabilities_per_month(df)
+    vulnerabilities_per_platform(df)
+    severity_distribution_by_platform(df)
+    #col1, col2 = st.columns(2)
+    #with col1:
+    closure_status(df)
+    app_os(df)
+    #with col2:
+    vulnerabilities_by_server(df)
+    most_non_compliant_platforms(df)
 
-    grid_response = AgGrid(
-        df,
-        gridOptions=grid_options,
-        height=400,
-        width='150%',
-        data_return_mode='AS_INPUT',
-        update_mode='MODEL_CHANGED',
-        fit_columns_on_grid_load=False,  # Ensure columns are not auto-fitted
-        allow_unsafe_jscode=True,  # This enables the usage of JsCode
-        enable_enterprise_modules=False,
-    )
 
-    # Get the selected row
-    selected_rows = grid_response.get('selected_rows', pd.DataFrame())
-    if isinstance(selected_rows, pd.DataFrame) and not selected_rows.empty:
-        selected_row = selected_rows.iloc[0]
-        row_content = selected_row.to_dict()
-        st.json(row_content)
-    
-    # Display statistics about the shown DataFrame
-    sla_less_equal_3_days = ((df['SLA Remaining Days'] <= 3) & (df['SLA Remaining Days'] > 0)).sum()
-    sla_more_than_3_days = (df['SLA Remaining Days'] > 3).sum()
-    st.subheader("Statistics")
-    stats = {
-        "Total Records": len(df),
-        "Unique Applications": df['Applications'].nunique(),
-        "Critical Vulnerabilities": (df['Severity'] == 'Critical').sum(),
-        "High Vulnerabilities": (df['Severity'] == 'High').sum(),
-        "Medium Vulnerabilities": (df['Severity'] == 'Medium').sum(),
-        "Low Vulnerabilities": (df['Severity'] == 'Low').sum(),
-        "Minimal Vulnerabilities": (df['Severity'] == 'Minimal').sum(),
-        "SLA Breached": (df['SLA Breached?'] == 'Non-Compliant').sum(),
-        "SLA <= 3 Days": sla_less_equal_3_days,
-        "SLA > 3 Days": sla_more_than_3_days
-    }
-    stats_df = pd.DataFrame(list(stats.items()), columns=['Statistic', 'Value'])
-    st.table(stats_df.style.hide(axis='index'))
+    platforms_close_to_sla_table(df)
 
-    # Create a dashboard for visualization
-    st.subheader("Dashboard")
 
-    # Example visualizations (you can customize these as needed)
-    bar_width = 50  # Set a consistent bar width
 
-    application_chart = alt.Chart(df).mark_bar(size=bar_width).encode(
-        x=alt.X('Applications', axis=alt.Axis(labelAngle=-45)),
-        y='count()',
-        tooltip=['Applications', 'count()']
-    ).properties(width=600)
+def dashboard_service():
+    """
+    Main function to run the dashboard service
 
-    sla_breached_chart = alt.Chart(df).mark_bar(size=bar_width).encode(
-        x='SLA Breached?',
-        y='count()',
-        tooltip=['SLA Breached?', 'count()']
-    ).properties(width=600)
+    :return:
+    """
+    uploaded_file = upload_file()
 
-    severity_chart = alt.Chart(df).mark_bar(size=bar_width).encode(
-        x='Severity',
-        y='count()',
-        tooltip=['Severity', 'count()']
-    ).properties(width=600)
-    
-    st.altair_chart(application_chart, use_container_width=True)
-    st.altair_chart(sla_breached_chart, use_container_width=True)
-    st.altair_chart(severity_chart, use_container_width=True)
-    st.bar_chart(df['SLA Remaining Days'])
-    # Add a graph for SLA remaining days
-    st.subheader("SLA Remaining Days Distribution")
-    sla_data = {
-        'SLA Remaining Days': ['<= 3 Days', '> 3 Days'],
-        'Count': [sla_less_equal_3_days, sla_more_than_3_days]
-    }
-    sla_df = pd.DataFrame(sla_data)
-    sla_chart = alt.Chart(sla_df).mark_bar(size=bar_width).encode(
-        x='SLA Remaining Days',
-        y='Count',
-        tooltip=['SLA Remaining Days', 'Count']
-    ).properties(width=600)
+    if uploaded_file:
+        # Check if a processed file already exists
+        filename = uploaded_file.name
+        processed_filename = f"processed_{filename}"
 
-    st.altair_chart(sla_chart, use_container_width=True)
+        if os.path.exists(processed_filename):
+            df = pd.read_csv(processed_filename)
+
+        else:
+            # Process the file and cache the result
+            df = process_file(uploaded_file)
+
+            if df.empty:
+                st.stop()  # Stop execution if DataFrame is empty
+            # Save the processed DataFrame to a file
+            save_processed_file(df, filename)
+
+        # Apply filters
+        df = apply_filters(df)
+        create_dashboard(df)
+
+
+if __name__ == "__main__":
+    setup_page()
+
+    st.sidebar.image("STC.png", width=200)
+
+    page = st.sidebar.selectbox('Navigation', ['AI Solution','Dashboard'])
+    if page == 'AI Solution':
+        ai_solution()
+    elif page == 'Dashboard':
+        dashboard_service()
