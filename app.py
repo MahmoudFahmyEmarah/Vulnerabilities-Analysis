@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import json
 from pandas import DataFrame
 from plots import kpi, vulnerabilities_per_platform, closure_status, platforms_close_to_sla_table, \
-    most_non_compliant_platforms, statistics, \
+    most_non_compliant_platforms, \
     severity_distribution_by_platform, vulnerabilities_per_month, vulnerabilities_by_server,app_os
 from ai_solution import ai_solution
 load_dotenv()
@@ -196,6 +196,9 @@ def upload_file():
     return uploaded_file
 
 
+
+
+
 def apply_filters(df: DataFrame):
     """
     Apply filters to the DataFrame based on the selected options
@@ -223,6 +226,13 @@ def apply_filters(df: DataFrame):
     if selected_severity != "All":
         df = df[df['Severity'] == selected_severity]
 
+    st.sidebar.title('Search IP')
+    text_search = st.sidebar.text_input("Search For Device Name", value="")
+    if text_search:
+        df = df[df['Device Name'] == text_search]
+    else:
+        st.write("Wrong")
+
     return df
 
 
@@ -233,7 +243,6 @@ def create_dashboard(df: DataFrame):
     :return:
     """
     kpi(df)
-    statistics(df)
     vulnerabilities_per_month(df)
     vulnerabilities_per_platform(df)
     severity_distribution_by_platform(df)

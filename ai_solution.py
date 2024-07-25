@@ -178,7 +178,6 @@ def ai_solution():
 
         # Add dropdowns to filter based on Applications and SLA Breached (in the sidebar)
         st.sidebar.header("Filters")
-
         applications = df['Applications'].unique()
         selected_application = st.sidebar.selectbox("Filter by Application", options=["All"] + list(applications))
 
@@ -203,6 +202,11 @@ def ai_solution():
 
         if selected_topic != "All":
             df = df[df['Topic'] == selected_topic]
+
+        text_search = st.sidebar.text_input("Search For Device Name", value="")
+        if text_search:
+            df = df[df['Device Name'] == text_search]
+
 
         # Display the filtered DataFrame using AgGrid for interactivity
         gb = GridOptionsBuilder.from_dataframe(df)

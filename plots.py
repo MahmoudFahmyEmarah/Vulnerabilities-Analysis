@@ -18,6 +18,7 @@ def kpi(df: DataFrame):
 
     with col1:
         total = len(df)
+        server = df['Device Name'].nunique()
 
         st.markdown(f"""
             <div class ="Card">
@@ -25,7 +26,7 @@ def kpi(df: DataFrame):
                     <div class="title">Total</div>
                 </div>
                 <div class="number">{total}</div>
-                <div class="subtitle">164 Servers</div>
+                <div class="subtitle">{server} Servers</div>
             </div>
         """, unsafe_allow_html=True)
 
@@ -53,7 +54,7 @@ def kpi(df: DataFrame):
                       <div class ="title">Medium</div>
                       </div>
                        <div class ="number" >{medium}</div>
-                       <div class ="subtitle">20 Servers</div>
+                       <div class ="subtitle"></div>
                </div>
 
                    """, unsafe_allow_html=True)
@@ -65,7 +66,7 @@ def kpi(df: DataFrame):
                       <div class ="title">Low</div>
                         </div>
                        <div class ="number">{low}</div>
-                        <div class ="subtitle">132 Servers</div>
+                        <div class ="subtitle"></div>
                </div>
 
                    """, unsafe_allow_html=True)
@@ -314,31 +315,7 @@ def most_non_compliant_platforms(df: DataFrame):
     st.plotly_chart(fig)
 
 
-def statistics(df: DataFrame):
-    """
-    Display the statistics
-    :param df:
-    :return:
-    """
-    # Display statistics about the shown DataFrame
-    # sla_less_equal_3_days = ((df['SLA Remaining Days'] <= 3) & (df['SLA Remaining Days'] > 0)).sum()
-    # sla_more_than_3_days = (df['SLA Remaining Days'] > 3).sum()
-    st.subheader("Statistics")
-    stats = {
-        "Total Records": len(df),
-        "Unique Applications": df['Applications'].nunique(),
-        "Critical Vulnerabilities": (df['Severity'] == 'Critical').sum(),
-        "High Vulnerabilities": (df['Severity'] == 'High').sum(),
-        "Medium Vulnerabilities": (df['Severity'] == 'Medium').sum(),
-        "Low Vulnerabilities": (df['Severity'] == 'Low').sum(),
-        "Minimal Vulnerabilities": (df['Severity'] == 'Minimal').sum(),
-        "SLA Breached": (df['SLA Breached?'] == 'Non-Compliant').sum(),
-        # "SLA <= 3 Days": sla_less_equal_3_days,
-        # "SLA > 3 Days": sla_more_than_3_days,
 
-    }
-    stats_df = pd.DataFrame(list(stats.items()), columns=['Statistic', 'Value'])
-    st.table(stats_df.style.hide(axis='index'))
 
 
 def platforms_close_to_sla_table(df: DataFrame):
@@ -349,7 +326,7 @@ def platforms_close_to_sla_table(df: DataFrame):
     """
     st.markdown('<h2 class="title">PlatForm Close to SLA</h2>', unsafe_allow_html=True)
 
-    specific_columns = df[['Applications', 'Title', 'WithSLA', 'Severity', "Days", "SLA Remaining Days"]]
+    specific_columns = df[['Applications', 'Title','Device Name','WithSLA', 'Severity', "Days", "SLA Remaining Days"]]
 
     # Filter 'WithSLA' column to only include rows where the value is 'withSLA'
     specific_columns = specific_columns[specific_columns['WithSLA'] == 'WithSLA']
@@ -373,29 +350,31 @@ def platforms_close_to_sla_table(df: DataFrame):
     end = start + 10
 
     # Display the table for the current page
-    container.table(specific_columns.iloc[start:end].reset_index(drop=True))
+    container.table(specific_columns.iloc[start:end])
 
 
-
-def app_os(df:DataFrame):
+def app_os(df: pd.DataFrame):
     red_hat_count = 0
-    # Iterate through rows and update 'Title' column
+    app_os_list = []  # List to store the values for the new column
+
     for index, row in df.iterrows():
         if 'Red Hat' in row['Title']:
-            df.at[index, 'Title'] = 'Red Hat'
+            app_os_list.append('OS')  # Add 'OS' if 'Red Hat' is in the title
             red_hat_count += 1
         else:
-            df.at[index, 'Title'] = 'Other'
+            app_os_list.append('Application')  # Add 'Application' for other titles
 
+    # Add the new column 'app_os' to the DataFrame
+    df['app_os'] = app_os_list
 
     # Initialize counts
-    red_hat_count = df[df['Title'].str.contains('Red Hat', case=False)].shape[0]
-    other_count = df.shape[0] - red_hat_count
+    red_hat_count = sum(1 for val in app_os_list if val == 'OS')
+    other_count = sum(1 for val in app_os_list if val == 'Application')
 
     # Create labels and values for pie chart
-    labels = ['OS', 'Apllication']
+    labels = ['OS', 'Application']
     values = [red_hat_count, other_count]
-    colors = ['#6ED99D', '#ee2400']  # Custom colors for Red Hat and Other
+    colors = ['#6ED99D', '#ee2400']  # Custom colors for OS and Application
 
     # Create pie chart
     fig = go.Figure(data=[go.Pie(labels=labels,
@@ -407,6 +386,6 @@ def app_os(df:DataFrame):
                                  )])
 
     fig.update_layout(
-        title="<span style='color:#600587; font-size:20px'>Apllication vs OS</span>",
+        title="<span style='color:#600587; font-size:20px'>Application vs OS</span>",
     )
     st.plotly_chart(fig)
