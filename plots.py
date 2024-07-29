@@ -327,6 +327,7 @@ def platforms_close_to_sla_table(df: DataFrame):
     st.markdown('<h2 class="title">PlatForm Close to SLA</h2>', unsafe_allow_html=True)
 
     specific_columns = df[['Applications', 'Title','Device Name','WithSLA', 'Severity', "Days", "SLA Remaining Days"]]
+    specific_columns = specific_columns.sort_values(by='SLA Remaining Days', ascending=True)
 
     # Filter 'WithSLA' column to only include rows where the value is 'withSLA'
     specific_columns = specific_columns[specific_columns['WithSLA'] == 'WithSLA']
@@ -350,7 +351,9 @@ def platforms_close_to_sla_table(df: DataFrame):
     end = start + 10
 
     # Display the table for the current page
-    container.table(specific_columns.iloc[start:end])
+    selected_rows = specific_columns.iloc[start:end]
+
+    container.table(selected_rows)
 
 
 def app_os(df: pd.DataFrame):

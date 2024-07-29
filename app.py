@@ -230,8 +230,6 @@ def apply_filters(df: DataFrame):
     text_search = st.sidebar.text_input("Search For Device Name", value="")
     if text_search:
         df = df[df['Device Name'] == text_search]
-    else:
-        st.write("Wrong")
 
     return df
 
