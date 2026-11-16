@@ -6,8 +6,8 @@ The file `Single Store DOCs.zip` (1,817,731 bytes) was split into **2 part(s)** 
 
 | # | Part | Size (bytes) | SHA-256 |
 |---|------|--------------|---------|
-| 1 | `Single Store DOCs.part-00` | 1048576 | `0c1ed9aca56a8db6314b0eddbdd845e98ca1670c3d64a4a3ec3ec2caa8130bca` |
-| 2 | `Single Store DOCs.part-01` | 769155 | `e65c4066c3fadd41ade3d2873c7fc1c4c7d4204bda04de753dbcf04836a2dff8` |
+| 1 | `Single Store DOCs.part-00` | 908866 | `d88416471cfe644bc4c2e2363abf5ff45d9d14aba4bb445e5d7118529112c99e` |
+| 2 | `Single Store DOCs.part-01` | 908865 | `8da034d9894da329e77872320ea3259c6547b6fa54194b2dbdc8be27ab61f44d` |
 
 ## Reassemble
 
