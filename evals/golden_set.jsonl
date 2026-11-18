@@ -21,12 +21,13 @@
 {"title": "Apache Log4j Remote Code Execution (RCE) Vulnerability (Log4Shell)", "topic": "Application Issue"}
 {"title": "EOL/Obsolete Software: Apache Log4j 1.X Detected", "topic": "Application Issue"}
 {"title": "Spring Framework Denial of Service (DoS) Vulnerability", "topic": "Application Issue"}
-{"title": "Apache Tomcat 9 Multiple Vulnerabilities", "topic": "Application Issue"}
+{"title": "Apache Tomcat 10 Authentication Bypass Vulnerability (CVE-2026-29145)", "topic": "Application Issue"}
 {"title": "Apache ZooKeeper Multiple Security Vulnerabilities", "topic": "Application Issue"}
 {"title": "Oracle Java Standard Edition (SE) Critical Patch Update - April 2026 (CPUAPR2026)", "topic": "Application Issue"}
-{"title": "Red Hat OpenJDK Multiple Vulnerabilities", "topic": "Application Issue"}
-{"title": "Gitlab Multiple Vulnerabilities", "topic": "Application Issue"}
-{"title": "Microsoft SQL Server Security Update for July 2026", "topic": "Application Issue"}
+{"title": "Red Hat OpenJDK Java (for Middleware) Security Update (RHSA-2022:1438)", "topic": "Application Issue"}
+{"title": "Microsoft OpenJDK Multiple Vulnerabilities (APR26)", "topic": "Application Issue"}
+{"title": "Gitlab Multiple Vulnerabilities (prior to gitlab- 17.10.1, 17.9.3, 17.8.6)", "topic": "Application Issue"}
+{"title": "Microsoft SQL Server Multiple Vulnerabilities for April 2026", "topic": "Application Issue"}
 {"title": "SSL Certificate - Expired", "topic": "Application Issue"}
 {"title": "Birthday attacks against TLS ciphers with 64bit block size vulnerability (Sweet32)", "topic": "Application Issue"}
 {"title": "Microsoft Edge Based on Chromium Prior to 156.0.4314.42 Multiple Vulnerabilities", "topic": "Application Issue"}

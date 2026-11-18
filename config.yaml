@@ -5,6 +5,16 @@ app:
   data_dir: latest_Data            # folder scanned for the three report files
   server_list: MS_All_servers.xlsx # team server inventory (IP, Application, Enviroment, Hostname)
   environment_overrides: reference/environment_overrides.csv
+  # Reference inventory of the AI platform servers. For the servers it lists, its platform name
+  # and environment win over what the reports say. Remove the line to switch this off.
+  ai_inventory: reference/AI Platforms Inventory -V2.0.xlsx
+  # Inventory sheet name -> application name shown in the app. The development lake (Advance)
+  # and the production lake (Accelerate) are one platform, so they share a name and get
+  # scheduled together: development first, then production.
+  ai_inventory_names:
+    Advance: AI Data Lake
+    Accelerate: AI Data Lake
+    R-studio: R-Studio
   cache_dir: .cache
 
 llm:

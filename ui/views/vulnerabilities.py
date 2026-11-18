@@ -12,9 +12,9 @@ from workflows import recommend
 
 AGE_BUCKETS = [(-1, 7, "0–7"), (7, 14, "8–14"), (14, 30, "15–30"), (30, 45, "31–45"), (45, 90, "46–90"),
                (90, 180, "91–180"), (180, 365, "181–365"), (365, 10**6, "Over 365")]
-ROW_COLUMNS = ["Applications", "Device Name", "Environment", "Title", "Severity", "Topic", "SLA Status",
+ROW_COLUMNS = ["Applications", "Server Role", "Device Name", "Environment", "Title", "Severity", "Topic", "SLA Status",
                "Ageing in Days", "SLA Remaining Days", "Operating System", "Qualys Status", "Date First Found",
-               "Related CVEs"]
+               "Related CVEs", "Report Application"]
 
 
 def _page_filters(frame: pd.DataFrame) -> pd.DataFrame:
@@ -81,8 +81,9 @@ def _detail(frame: pd.DataFrame, title: str) -> None:
             with st.expander("Scan result on the oldest server"):
                 st.code(strip_html(first.get("Results"))[:4000] or "Not provided.", language=None)
         with right:
-            servers = rows[["Device Name", "Applications", "Environment", "Operating System", "Ageing in Days",
-                            "SLA Remaining Days", "SLA Status"]].sort_values("Ageing in Days", ascending=False)
+            columns = [c for c in ("Device Name", "Applications", "Server Role", "Environment", "Operating System",
+                                   "Ageing in Days", "SLA Remaining Days", "SLA Status") if c in rows.columns]
+            servers = rows[columns].sort_values("Ageing in Days", ascending=False)
             st.dataframe(servers, hide_index=True, height=330)
     components.recommendation_panel(recommend.VULNERABILITY, first.to_dict(), key=title)
 

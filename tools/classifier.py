@@ -20,6 +20,9 @@ UNMATCHED_RULE = "Unmatched (default)"
 
 # (rule name, topic, pattern) — patterns are case-insensitive.
 RULES: list[tuple[str, str, str]] = [
+    # Vendor builds of Java ("Red Hat OpenJDK ... (RHSA-...)", "Microsoft OpenJDK ...") are application
+    # runtimes, not OS packages, so this rule comes before the distribution-advisory rule.
+    ("Java runtime (vendor build)", APP, r"^(red hat|microsoft|azul|oracle|eclipse|amazon) (openjdk|java|corretto|temurin)"),
     ("Linux distribution advisory", OS,
      r"^(red hat (security )?update|oracle enterprise linux|centos|suse|ubuntu|debian|amazon linux|rocky linux"
      r"|almalinux)\b|\brhsa-\d"),

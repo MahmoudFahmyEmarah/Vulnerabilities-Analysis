@@ -17,7 +17,7 @@ import pandas as pd
 from agents.scheduler import SchedulerAgent
 from guardrails import input_checks
 from guardrails.output_checks import enforce_schedule
-from tools.environment import DEV, PROD, UNCONFIRMED
+from tools.environment import DEV, PROD, SRC_ASSUMED
 from tools.saudi_calendar import SaudiCalendar, Slot
 
 BUNDLES = {
@@ -107,7 +107,7 @@ def build_context(application: str, vulns: pd.DataFrame, mbss: pd.DataFrame, cs:
         "sla": sla,
         "top_items": top_items,
         "os_mix": os_mix,
-        "assumed_production": sum(1 for info in per_server.values() if info["env_source"] in UNCONFIRMED),
+        "assumed_production": sum(1 for info in per_server.values() if info["env_source"] == SRC_ASSUMED),
     }
 
 

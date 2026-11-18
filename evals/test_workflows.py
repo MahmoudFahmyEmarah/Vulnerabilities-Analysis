@@ -45,7 +45,7 @@ def calendar() -> SaudiCalendar:
 
 
 NOW = datetime.fromisoformat("2026-11-18T18:00+03:00")
-FINDING = {"Title": "Red Hat Update for sudo (RHSA-2026:1)", "Severity": "High",
+FINDING = {"Title": "Red Hat Update for sudo (RHSA-2023:0284)", "Severity": "High",
            "Operating System": "Red Hat Enterprise Linux 8.10", "Applications": "Nifi_N", "Topic": "OS Issue",
            "Description": "desc <b>bold</b>", "Solution": "update", "Results": "sudo 1.8 < 1.9",
            "Section Manager": "Someone Important"}
@@ -57,7 +57,9 @@ def frames():
                            "Title": title, "Topic": topic, "Severity": "Medium", "SLA Status": "Breached",
                            "OS Family": "RHEL 8"}
                           for ip, env in servers
-                          for title, topic in (("Red Hat Update for kernel", "OS Issue"), ("Apache Log4j", "Application Issue"))])
+                          for title, topic in (
+                              ("Red Hat Update for kernel (RHSA-2026:89816)", "OS Issue"),
+                              ("Apache Log4j Remote Code Execution (RCE) Vulnerability (Log4Shell)", "Application Issue"))])
     return vulns, pd.DataFrame(), pd.DataFrame()
 
 
@@ -118,14 +120,16 @@ def test_risky_commands_are_flagged():
 
 
 def test_classifier_agent_labels_titles():
-    labels, _ = TopicClassifierAgent().classify(["Some kernel thing", "FooDB remote code execution"])
-    assert labels == {"Some kernel thing": "OS Issue", "FooDB remote code execution": "Application Issue"}
+    titles = ["File Permissions (passwd, shadow and group) Are Not Properly Set",
+              "Starlette Framework Authentication Bypass Vulnerability"]
+    labels, _ = TopicClassifierAgent().classify(titles)
+    assert labels == {titles[0]: "OS Issue", titles[1]: "Application Issue"}
 
 
 # ---- schedule workflow --------------------------------------------------------------
 def test_draft_puts_development_first_and_production_outside_working_hours(calendar):
     policies = settings.load_policies()
-    context = schedule.build_context("Demo", *frames())
+    context = schedule.build_context("Nifi_N", *frames())
     plan = schedule.draft_plan(context, calendar, policies, NOW)
     dev = [w for w in plan["waves"] if w["environment"] == DEV]
     prod = [w for w in plan["waves"] if w["environment"] == PROD]
@@ -141,7 +145,7 @@ def test_draft_puts_development_first_and_production_outside_working_hours(calen
 def test_guardrail_moves_production_out_of_working_hours(calendar, monkeypatch):
     monkeypatch.setenv("MOCK_LLM_BREAK_POLICY", "1")     # the mock puts production in a daytime dev window
     policies = settings.load_policies()
-    context = schedule.build_context("Demo", *frames())
+    context = schedule.build_context("Nifi_N", *frames())
     draft = schedule.draft_plan(context, calendar, policies, NOW)
     plan = schedule.refine_with_ai(context, draft, calendar, policies, NOW)
     assert plan["source"] == "ai" and any("Moved wave" in note for note in plan["guardrail_notes"])

@@ -8,8 +8,8 @@ from guardrails.input_checks import strip_html
 from ui import charts, components, state, theme
 from workflows import recommend
 
-ROW_COLUMNS = ["Platform", "Applications", "Device Name", "Environment", "Criticality", "OS Family",
-               "Control Description", "Qualys Control ID", "Days Failing", "MBSS Score", "Evaluation Date"]
+ROW_COLUMNS = ["Platform", "Applications", "Server Role", "Device Name", "Environment", "Criticality", "OS Family",
+               "Control Description", "Qualys Control ID", "Days Failing", "MBSS Score", "Evaluation Date", "Report Application"]
 
 
 def _page_filters(frame: pd.DataFrame) -> pd.DataFrame:

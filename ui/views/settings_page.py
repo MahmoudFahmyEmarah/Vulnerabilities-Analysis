@@ -90,11 +90,11 @@ def _environment_section(data: state.Data) -> None:
         devices = data.devices if platform == state.ALL else data.devices[data.devices["Platform"] == platform]
         st.caption(f"Showing {platform if platform != state.ALL else 'all platforms'} (sidebar Platform filter).")
         counts = devices.groupby("Env Source")["Device Name"].nunique()
-        theme.badges([(f"{source}: {count:,} servers", "red" if source in env.UNCONFIRMED else "gray")
+        theme.badges([(f"{source}: {count:,} servers", "red" if source == env.SRC_ASSUMED else "gray")
                       for source, count in counts.items()])
         overrides = env.load_overrides(settings.overrides_file())
         by_app = dict(zip(overrides["Applications"], overrides["Environment"]))
-        assumed = devices[devices["Env Source"].isin([*env.UNCONFIRMED, env.SRC_OVERRIDE])]
+        assumed = devices[devices["Env Source"].isin([env.SRC_ASSUMED, env.SRC_OVERRIDE])]
         table = (assumed.groupby(["Platform", "Applications"])["Device Name"].nunique().reset_index(name="Servers")
                  .sort_values("Servers", ascending=False))
         table["Environment"] = table["Applications"].map(by_app)
@@ -109,7 +109,9 @@ def _environment_section(data: state.Data) -> None:
             env.save_overrides(settings.overrides_file(), pd.concat([keep, chosen], ignore_index=True))
             st.success(f"Saved {len(chosen)} application mapping(s) to {settings.overrides_file().name}.")
             st.rerun()
-        st.caption("For single servers, add rows with a Device Name to reference/environment_overrides.csv.")
+        st.caption("For single servers, add rows with a Device Name to reference/environment_overrides.csv. "
+                   "Servers in the AI Platforms Inventory take their environment from it "
+                   f"({settings.load_config()['app'].get('ai_inventory', 'not configured')}).")
 
 
 def _classifier_section(data: state.Data) -> None:

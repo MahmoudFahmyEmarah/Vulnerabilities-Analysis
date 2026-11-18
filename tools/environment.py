@@ -2,13 +2,14 @@
 
 Sources, strongest first:
 1. reference/environment_overrides.csv  (maintained by the team, by IP or by application)
-2. the team server list (MS_All_servers.xlsx, column "Enviroment")
-3. the application name (Prod / DR / NonProd / Dev / SIT / UAT ...)
-4. the safe default from guardrails/policies.yaml (Production)
+2. the AI Platforms Inventory (the reference for AI platform servers)
+3. the application name in the latest reports (Prod / DR / NonProd / Dev / SIT / UAT ...)
+4. the team server list (MS_All_servers.xlsx, column "Enviroment")
+5. the safe default from guardrails/policies.yaml (Production)
 
-When the server list and the application name disagree (for example a server listed as
-Development that belongs to "CEM Kafka Prod"), the server is treated as Production and
-flagged as a conflict until someone settles it in the override file.
+The latest reports are the reference: when the application name states the environment, it
+wins over the older server list (a server listed as Development that belongs to
+"CEM Kafka Prod" is Production). The server list only decides when the name says nothing.
 
 Pre-production, test, SIT and UAT count as Development: they may be changed at any time.
 Disaster-recovery sites count as Production.
@@ -24,11 +25,10 @@ PROD = "Production"
 DEV = "Development"
 
 SRC_OVERRIDE = "Override file"
+SRC_INVENTORY = "AI inventory"
 SRC_SERVER_LIST = "Server list"
 SRC_APP_NAME = "Application name"
 SRC_ASSUMED = "Assumed"
-SRC_CONFLICT = "Conflict (treated as production)"
-UNCONFIRMED = (SRC_ASSUMED, SRC_CONFLICT)
 
 _NON_PROD = re.compile(
     r"non[\s_\-]?prod|pre[\s_\-]?prod|preprod|\bdev\b|\bdev[\s_\-]|[\s_\-]dev\b|development|\bsit\b|\buat\b"
@@ -88,10 +88,12 @@ def resolve_environments(
     server_list: pd.DataFrame,
     overrides: pd.DataFrame,
     default: str = PROD,
+    inventory: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Return one row per device with Environment and Env Source.
 
-    ``devices`` needs the columns "Device Name" and "Applications".
+    ``devices`` needs the columns "Device Name" and "Applications". ``inventory`` is the AI
+    Platforms Inventory (columns IP and Environment); servers it does not place fall through.
     """
     out = devices[["Device Name", "Applications"]].drop_duplicates("Device Name").copy()
     out["Environment"] = None
@@ -108,14 +110,13 @@ def resolve_environments(
          SRC_OVERRIDE)
     fill(out["Applications"].map(dict(zip(by_app["Applications"].str.strip(), by_app["Environment"].map(_normalise)))),
          SRC_OVERRIDE)
+    if inventory is not None and not inventory.empty:
+        fill(out["Device Name"].map(dict(zip(inventory["IP"], inventory["Environment"]))), SRC_INVENTORY)
     names = {app: environment_from_name(app) for app in out["Applications"].dropna().unique()}
-    from_name = out["Applications"].map(names)
+    fill(out["Applications"].map(names), SRC_APP_NAME)
     if not server_list.empty:
-        from_list = out["Device Name"].map(dict(zip(server_list["IP"], server_list["Environment"].map(_normalise))))
-        conflict = from_list.notna() & from_name.notna() & (from_list != from_name)
-        fill(pd.Series(PROD, index=out.index).where(conflict), SRC_CONFLICT)
-        fill(from_list, SRC_SERVER_LIST)
-    fill(from_name, SRC_APP_NAME)
+        fill(out["Device Name"].map(dict(zip(server_list["IP"], server_list["Environment"].map(_normalise)))),
+             SRC_SERVER_LIST)
 
     assumed = out["Environment"].isna()
     out.loc[assumed, "Environment"] = default

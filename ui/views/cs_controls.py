@@ -104,7 +104,8 @@ def render() -> None:
         theme.title("Servers", "One row per server with the state of every control")
         only_gaps = st.toggle("Only servers with a gap", value=True, key="c_only_gaps")
         state_columns = [f"{control} State" for control in dl.CS_CONTROLS]
-        columns = [c for c in ("Device Name", "Host Name", "Applications", "Platform", "Environment") if c in cs]
+        columns = [c for c in ("Device Name", "Host Name", "Applications", "Server Role", "Platform", "Environment")
+                   if c in cs]
         table = cs[columns + state_columns + ["Gaps"]].rename(columns={c: c.removesuffix(" State") for c in state_columns})
         if only_gaps:
             table = table[table["Gaps"] > 0]

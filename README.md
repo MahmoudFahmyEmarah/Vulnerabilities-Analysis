@@ -68,12 +68,29 @@ Check before going live:
 | Data folder, team name, SLA days, model options | `config.yaml` |
 | Working days and hours, production windows, holiday freeze, soak time, canary size | `guardrails/policies.yaml` |
 | Which servers are production or development | Settings page → *Environment mapping* (saved to `reference/environment_overrides.csv`) |
+| AI Platforms Inventory file and platform names | `config.yaml` → `app.ai_inventory`, `app.ai_inventory_names` |
 | OS / application rules | `tools/classifier.py`, checked by `evals/golden_set.jsonl` |
 | Prompts | `prompts/` (log changes in `prompts/CHANGELOG.md`) |
 
-How the environment of a server is decided, strongest first: the override file, the team server list
-(`MS_All_servers.xlsx`), the application name (Prod / DR / NonProd / Dev ...). If the server list and the name
-disagree, or nothing is known, the server is treated as **production**.
+How the environment of a server is decided, strongest first: the override file, the AI Platforms Inventory,
+the application name in the latest reports (Prod / DR / NonProd / Dev ...), then the team server list
+(`MS_All_servers.xlsx`). If nothing is known, the server is treated as **production**.
+
+### AI Platforms Inventory (reference for AI servers)
+
+Put the inventory workbook in `reference/` and point `config.yaml` → `app.ai_inventory` at it. For every server
+it lists:
+
+- its **platform name** replaces the application name from the reports (the report's label stays visible as
+  *Report Application*);
+- its **environment** (from the Environment column, or the sheet name such as "Dev-..." / "... - Prod") is used;
+- its **role** and **cluster** are shown next to the server.
+
+`app.ai_inventory_names` renames sheets to application names. By default the development lake (*Advance*) and the
+production lake (*Accelerate*) are both "AI Data Lake", so they are scheduled together: development first.
+The Overview page lists inventory servers that appear in none of the reports. Only IP, host name, platform,
+role, cluster, project, environment and status are read from the workbook; licence keys and credentials in it
+are ignored. The workbook itself is not committed (`*.xlsx` is in `.gitignore`).
 
 ## How the fix schedule stays safe
 

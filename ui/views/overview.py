@@ -29,6 +29,50 @@ def _by_application(vulns: pd.DataFrame, mbss: pd.DataFrame, cs: pd.DataFrame, d
     return table.sort_values(sort_by, ascending=False) if sort_by else table
 
 
+def _inventory_check(data: state.Data) -> None:
+    """Compare the AI Platforms Inventory (the reference) with what the three reports contain."""
+    inventory = data.inventory
+    if inventory.empty:
+        return
+    reports = {"Vulnerability report": data.vulns, "MBSS report": data.mbss, "CS Controls report": data.cs}
+    table = inventory[["IP", "Hostname", "AI Platform", "Server Role", "Environment"]].copy()
+    table["Environment"] = table["Environment"].fillna("Not stated")
+    for label, frame in reports.items():
+        present = set(frame["Device Name"]) if not frame.empty else set()
+        table[label] = table["IP"].isin(present).map({True: "Yes", False: "No"})
+    in_any = table[list(reports)].eq("Yes").any(axis=1)
+    table.insert(5, "In any report", in_any.map({True: "Yes", False: "No"}))
+    devices = data.devices.set_index("Device Name")
+    if "Report Application" in devices:
+        table["Name in the reports"] = table["IP"].map(devices["Report Application"])
+        renamed = (table["Name in the reports"].notna()
+                   & (table["Name in the reports"].str.casefold() != table["AI Platform"].str.casefold()))
+    else:
+        renamed = pd.Series(False, index=table.index)
+    set_by_inventory = int((data.devices["Env Source"] == env.SRC_INVENTORY).sum())
+
+    with st.container(border=True):
+        theme.title("AI Platforms Inventory check",
+                    "The inventory is the reference for AI platform servers: its platform names and environments are "
+                    "used in every page. This compares it with the three reports (all platforms, sidebar filters not applied).")
+        theme.kpis([
+            {"label": "Servers in the inventory", "value": theme.number(len(table)), "tone": "primary",
+             "sub": f"{table['AI Platform'].nunique()} AI platforms"},
+            {"label": "In no report", "value": theme.number((~in_any).sum()), "tone": "alert" if (~in_any).any() else "",
+             "sub": "not scanned, or scanned under another address"},
+            {"label": "Missing from the vulnerability report",
+             "value": theme.number((table["Vulnerability report"] == "No").sum()), "sub": "no open findings or not scanned"},
+            {"label": "Named differently in the reports", "value": theme.number(renamed.sum()),
+             "sub": "the inventory name is shown instead"},
+            {"label": "Environment set by the inventory", "value": theme.number(set_by_inventory),
+             "sub": "servers in the reports"},
+        ])
+        only_missing = st.toggle("Only servers that are in no report", key="o_inventory_missing")
+        shown = table[~in_any] if only_missing else table
+        components.capped_table(shown.sort_values(["In any report", "AI Platform", "IP"]), "overview-inventory",
+                                "ai_inventory_check.csv", height=320)
+
+
 def render() -> None:
     data = state.load()
     vulns, mbss, cs, devices = state.filtered(data)
@@ -69,7 +113,7 @@ def render() -> None:
          "sub": f"{production:,} production · {len(devices) - production:,} development"},
     ])
 
-    unconfirmed = int(devices["Env Source"].isin(env.UNCONFIRMED).sum())
+    unconfirmed = int((devices["Env Source"] == env.SRC_ASSUMED).sum())
     if unconfirmed:
         theme.note(f"{unconfirmed:,} of {len(devices):,} servers have no confirmed environment and are treated as "
                    "production. Map them on the Settings page to unlock daytime windows for development servers.")
@@ -100,3 +144,5 @@ def render() -> None:
             column_config["Past SLA"] = st.column_config.ProgressColumn(
                 "Past SLA", format="%d", min_value=0, max_value=int(table["Past SLA"].max()))
         components.capped_table(table, "overview-apps", "applications_overview.csv", column_config=column_config)
+
+    _inventory_check(data)

@@ -61,5 +61,10 @@ def server_list_file() -> Path:
     return resolve(load_config()["app"]["server_list"])
 
 
+def inventory_file() -> Path | None:
+    relative = load_config()["app"].get("ai_inventory")
+    return resolve(relative) if relative else None
+
+
 def overrides_file() -> Path:
     return resolve(load_config()["app"]["environment_overrides"])
