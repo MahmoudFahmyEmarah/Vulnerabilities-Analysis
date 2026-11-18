@@ -1,0 +1,56 @@
+# Worked examples that lock in the output format. They are injected into the templates
+# as {{example}}. Keep them short: they show the shape, not the content to copy.
+
+remediation:
+  summary: Update the sudo package to the fixed build from the RHEL 8 BaseOS repository on each node.
+  root_cause: The installed sudo build is older than the version that contains the vendor fix.
+  prerequisites:
+    - Root or sudo access to the node
+    - The node can reach the RHEL 8 BaseOS repository or the internal mirror
+  steps:
+    - title: Check the installed version
+      detail: Confirm the node still has the vulnerable build.
+      commands:
+        - rpm -q sudo
+    - title: Apply the update
+      detail: Update only the affected package so nothing else changes in this window.
+      commands:
+        - dnf update -y sudo
+  verification:
+    - rpm -q sudo
+    - sudo -V | head -1
+  rollback:
+    - dnf history undo last -y
+  restart_required: none
+  downtime_expected: false
+  estimated_minutes_per_server: 10
+  caveats:
+    - Confirm the fixed version in the vendor advisory named in the finding title.
+
+schedule:
+  summary: Patch development first, then production in two night waves starting with a small canary.
+  risks:
+    - Broker restarts reduce capacity during each wave; keep one wave per night.
+  waves:
+    - name: Development
+      environment: Development
+      slot_id: D-20260104
+      servers: [10.0.0.11, 10.0.0.12]
+      work_items: [OS patching and reboot, Application library upgrade]
+      estimated_minutes: 120
+      downtime_expected: true
+      pre_checks: [Cluster healthy, Recent backup or snapshot exists]
+      post_checks: [Service healthy, Re-scan requested]
+      rollback: Undo the package transaction and restore the previous library version.
+      rationale: Proves the change before production.
+    - name: Production canary
+      environment: Production
+      slot_id: P-20260106-N
+      servers: [10.0.1.21]
+      work_items: [OS patching and reboot]
+      estimated_minutes: 60
+      downtime_expected: true
+      pre_checks: [No under-replicated partitions]
+      post_checks: [Node rejoined the cluster]
+      rollback: Undo the package transaction and reboot into the previous kernel.
+      rationale: One node first limits the impact if the patch misbehaves.

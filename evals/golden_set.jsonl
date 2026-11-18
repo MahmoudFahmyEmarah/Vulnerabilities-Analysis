@@ -1,0 +1,35 @@
+{"title": "Red Hat Update for kernel (RHSA-2026:89816)", "topic": "OS Issue"}
+{"title": "Red Hat Update for curl security (RHSA-2026:92368)", "topic": "OS Issue"}
+{"title": "Red Hat Security Update for CVE-2026-31431 (DEPRECATED)", "topic": "OS Issue"}
+{"title": "EOL/Obsolete Operating System: Red Hat Enterprise Linux 7.9 Detected", "topic": "OS Issue"}
+{"title": "Linux Kernel Local Privilege Escalation Vulnerability (Dirty Frag) (CVE-2026-43284)", "topic": "OS Issue"}
+{"title": "Microsoft Windows Server Security Update for October 2026", "topic": "OS Issue"}
+{"title": "Microsoft .NET Framework Update for October 2026", "topic": "OS Issue"}
+{"title": "Microsoft Malware Protection Engine Elevation of Privilege Vulnerability (CVE-2026-69414)", "topic": "OS Issue"}
+{"title": "SSH Prefix Truncation Vulnerability (Terrapin)", "topic": "OS Issue"}
+{"title": "OpenSSH Multiple Vulnerabilities", "topic": "OS Issue"}
+{"title": "Readable SNMP Information", "topic": "OS Issue"}
+{"title": "EOL/Obsolete Software: SNMP Protocol Version 1/2c Detected", "topic": "OS Issue"}
+{"title": "NFS Exported Filesystems List Vulnerability", "topic": "OS Issue"}
+{"title": "SMB Signing Disabled or SMB Signing Not Required", "topic": "OS Issue"}
+{"title": "SMBv2 Signing Not Required", "topic": "OS Issue"}
+{"title": "VMware Tools Authentication Bypass Vulnerability (VMSA-2025-0005)", "topic": "OS Issue"}
+{"title": "EOL/Obsolete Software: Qualys Cloud Agent Detected", "topic": "OS Issue"}
+{"title": "File Permissions (passwd, shadow and group) Are Not Properly Set", "topic": "OS Issue"}
+{"title": "ElasticSearch Beats Multiple Vulnerabilities (ESA-2025-30,ESA-2025-31,ESA-2025-32)", "topic": "Application Issue"}
+{"title": "Apache CXF Multiple Vulnerabilities", "topic": "Application Issue"}
+{"title": "Apache Log4j Remote Code Execution (RCE) Vulnerability (Log4Shell)", "topic": "Application Issue"}
+{"title": "EOL/Obsolete Software: Apache Log4j 1.X Detected", "topic": "Application Issue"}
+{"title": "Spring Framework Denial of Service (DoS) Vulnerability", "topic": "Application Issue"}
+{"title": "Apache Tomcat 9 Multiple Vulnerabilities", "topic": "Application Issue"}
+{"title": "Apache ZooKeeper Multiple Security Vulnerabilities", "topic": "Application Issue"}
+{"title": "Oracle Java Standard Edition (SE) Critical Patch Update - April 2026 (CPUAPR2026)", "topic": "Application Issue"}
+{"title": "Red Hat OpenJDK Multiple Vulnerabilities", "topic": "Application Issue"}
+{"title": "Gitlab Multiple Vulnerabilities", "topic": "Application Issue"}
+{"title": "Microsoft SQL Server Security Update for July 2026", "topic": "Application Issue"}
+{"title": "SSL Certificate - Expired", "topic": "Application Issue"}
+{"title": "Birthday attacks against TLS ciphers with 64bit block size vulnerability (Sweet32)", "topic": "Application Issue"}
+{"title": "Microsoft Edge Based on Chromium Prior to 156.0.4314.42 Multiple Vulnerabilities", "topic": "Application Issue"}
+{"title": "Notepad++ Multiple Security Vulnerabilities", "topic": "Application Issue"}
+{"title": "Jupyter Notebook Open Redirect Vulnerability", "topic": "Application Issue"}
+{"title": "JMX Authentication Not Enabled on Localhost Interface", "topic": "Application Issue"}

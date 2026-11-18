@@ -1,0 +1,32 @@
+# Application settings. Secrets and the LLM endpoint live in .env (see .env.example).
+app:
+  title: Security Posture Dashboard
+  team: Data and AI Platform
+  data_dir: latest_Data            # folder scanned for the three report files
+  server_list: MS_All_servers.xlsx # team server inventory (IP, Application, Enviroment, Hostname)
+  environment_overrides: reference/environment_overrides.csv
+  cache_dir: .cache
+
+llm:
+  # The endpoint comes from LLM_BASE_URL in .env. Any OpenAI-compatible server works
+  # (vLLM, Ollama, TGI, LiteLLM ...).
+  # Leave model blank to use what the endpoint serves; LLM_MODEL in .env overrides it.
+  model: ""
+  preferred_models: [gpt-oss-120b, gpt-oss, qwen]   # picked first when the endpoint serves several
+  temperature: 0.2
+  max_tokens: 3000
+  timeout_seconds: 180
+  json_mode: true      # ask for response_format=json_object; falls back automatically if unsupported
+  max_retries: 1       # extra attempts when the answer is not valid JSON
+
+# Remediation SLA in days per severity (matches the "SLA Breached?" flag in the report).
+sla_days:
+  Critical: 7
+  High: 14
+  Medium: 30
+  Low: 45
+  Minimal: 60
+sla_due_soon_days: 3
+
+ui:
+  max_table_rows: 5000   # rows rendered in the browser; downloads always contain everything

@@ -1,0 +1,42 @@
+# Change-window policy. The scheduler and the schedule guardrail both read this file,
+# so the model can never place production work outside these rules.
+
+calendar:
+  timezone: Asia/Riyadh
+  working_days: [Sunday, Monday, Tuesday, Wednesday, Thursday]   # weekend = Friday, Saturday
+  working_hours: {start: "08:00", end: "17:00"}
+  holidays:
+    country: SA                # official Saudi holidays (Eid dates are astronomical estimates)
+    freeze_production: true    # no production change on a holiday or the night leading into it
+    extra_dates: []            # e.g. ["2026-12-31"] for change freezes or corrected Eid dates
+    remove_dates: []           # dates to treat as normal days
+
+production:
+  # Production work is only allowed outside working hours, inside these windows.
+  night_window: {start: "22:00", end: "05:00"}        # every night
+  weekend_day_window: {start: "08:00", end: "20:00"}  # Friday and Saturday daytime
+  unknown_environment_is: Production                  # safe default when a server is unmapped
+
+development:
+  # Development may be changed at any time. This is only the suggested slot for drafts.
+  preferred_window: {start: "09:00", end: "16:00"}
+
+scheduling:
+  horizon_days: 28                 # how far ahead windows are offered
+  soak_days_before_production: 2   # wait after development before touching production
+  canary_fraction: 0.2             # share of production servers in the first wave
+  max_parallel_servers: 5          # servers worked on at the same time
+  minutes_per_server:
+    os_patching: 45
+    application_fix: 60
+    mbss_hardening: 30
+    cs_control: 20
+
+llm_input:
+  max_field_chars: 1500       # longer scanner text is truncated before it reaches the model
+  max_servers_listed: 60
+  mask_ip_addresses: false    # true = replace IPs with server-1, server-2 ... in prompts
+  never_send:                 # personal data columns that never leave the app
+    - Application Delegate
+    - Section Manager
+    - Department Director

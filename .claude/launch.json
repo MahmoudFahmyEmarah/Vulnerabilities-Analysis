@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "security-dashboard",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "streamlit", "run", "app.py", "--server.port", "8571", "--server.headless", "true"],
+      "port": 8571
+    },
+    {
+      "name": "cml-launcher",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["cml_app.py"],
+      "port": 8100
+    }
+  ]
+}
