@@ -158,17 +158,28 @@ class BaseAgent:
         return ChatOpenAI(
             base_url=self.config.base_url, api_key=self.config.api_key, model=model,
             temperature=self.config.temperature, max_tokens=self.config.max_tokens,
-            timeout=self.config.timeout, max_retries=1, **options,
+            timeout=self.config.timeout, max_retries=0, **options,
         )
 
     def _invoke(self, model: str, messages: list[Any]) -> Any:
-        try:
-            return self._chat(model, self.config.json_mode).invoke(messages)
-        except Exception as error:  # noqa: BLE001
-            # Some servers reject response_format; retry once without it.
-            if self.config.json_mode and getattr(error, "status_code", None) in (400, 422):
-                return self._chat(model, False).invoke(messages)
-            raise
+        """One model call. A refused connection or a 429/5xx answer is retried once; a timeout is not,
+        so an endpoint that hangs costs the user one timeout, not several."""
+        from openai import APIConnectionError, APITimeoutError
+
+        json_mode, retried = self.config.json_mode, False
+        while True:
+            try:
+                return self._chat(model, json_mode).invoke(messages)
+            except APITimeoutError:
+                raise
+            except Exception as error:  # noqa: BLE001
+                status = getattr(error, "status_code", None)
+                if json_mode and status in (400, 422):   # some servers reject response_format: ask without it
+                    json_mode = False
+                elif not retried and (isinstance(error, APIConnectionError) or status in (429, 500, 502, 503, 504)):
+                    retried = True
+                else:
+                    raise
 
     def run(self, template: str | None = None, **variables: Any) -> tuple[BaseModel, dict[str, Any]]:
         """Call the model and return (validated answer, call details)."""

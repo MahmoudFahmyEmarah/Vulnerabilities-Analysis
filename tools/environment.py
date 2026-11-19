@@ -139,10 +139,14 @@ def resolve_environments(
 ) -> pd.DataFrame:
     """Return one row per device with Environment and Env Source.
 
-    ``devices`` needs the columns "Device Name" and "Applications". ``inventory`` is the AI
-    Platforms Inventory (columns IP and Environment); servers it does not place fall through.
+    ``devices`` needs the columns "Device Name" and "Applications", and may have "Report Application":
+    the name in the report before the AI inventory replaced it. The application-name rule reads that
+    name, so an inventory server the inventory gives no environment is still placed by its report name.
+    ``inventory`` is the AI Platforms Inventory (columns IP and Environment); servers it does not place
+    fall through.
     """
-    out = devices[["Device Name", "Applications"]].drop_duplicates("Device Name").copy()
+    columns = ["Device Name", "Applications"] + (["Report Application"] if "Report Application" in devices else [])
+    out = devices[columns].drop_duplicates("Device Name").copy()
     out["Environment"] = None
     out["Env Source"] = None
 
@@ -159,8 +163,10 @@ def resolve_environments(
          SRC_OVERRIDE)
     if inventory is not None and not inventory.empty:
         fill(out["Device Name"].map(dict(zip(inventory["IP"], inventory["Environment"]))), SRC_INVENTORY)
-    names = {app: environment_from_name(app) for app in out["Applications"].dropna().unique()}
-    fill(out["Applications"].map(names), SRC_APP_NAME)
+    reported = (out["Report Application"].fillna(out["Applications"]) if "Report Application" in out
+                else out["Applications"])
+    names = {app: environment_from_name(app) for app in reported.dropna().unique()}
+    fill(reported.map(names), SRC_APP_NAME)
     if not server_list.empty:
         fill(out["Device Name"].map(dict(zip(server_list["IP"], server_list["Environment"].map(_normalise)))),
              SRC_SERVER_LIST)

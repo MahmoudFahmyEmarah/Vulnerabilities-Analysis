@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import streamlit as st
@@ -53,15 +54,18 @@ def _export_button(data: state.Data, vulns: pd.DataFrame, mbss: pd.DataFrame, cs
                    devices: pd.DataFrame, config: dict) -> None:
     """Everything in the sidebar scope as one Excel workbook, built only when the button is clicked."""
     cs_file = data.files.get(dl.CS)
+    timezone = settings.load_policies()["calendar"]["timezone"]
     # Worked out now: the build runs on another thread, where session state is not available.
     options = {
         "scope": state.scope_label(),
         "report_dates": {
             "Vulnerability report as of": state.as_of(data.vulns, "Last Scan Date Time"),
             "MBSS report as of": state.as_of(data.mbss, "Evaluation Date"),
-            "CS Controls report file dated": (f"{datetime.fromtimestamp(cs_file.stat().st_mtime):%d %b %Y}"
-                                              if cs_file and cs_file.exists() else "no file"),
+            # Same date as the Settings and Trends pages: when the workbook was saved, not when it was copied.
+            "CS Controls report dated (workbook saved)": (f"{dl.file_info(dl.CS, cs_file).report_date:%d %b %Y}"
+                                                          if cs_file and cs_file.exists() else "no file"),
         },
+        "timezone": timezone,
         "due_soon_days": int(config["sla_due_soon_days"]),
         "staff_columns": settings.load_policies()["llm_input"].get("never_send", export.STAFF_COLUMNS),
         "changes": _vulnerability_changes(data),   # week-over-week New / Fixed columns
@@ -73,7 +77,7 @@ def _export_button(data: state.Data, vulns: pd.DataFrame, mbss: pd.DataFrame, cs
                  "Building the full workbook takes a few seconds.")
     right.download_button(
         "Export to Excel", lambda: export.build_workbook(vulns, mbss, cs, devices, **options),
-        file_name=f"security_posture_{datetime.now():%Y-%m-%d}.xlsx",
+        file_name=f"security_posture_{datetime.now(ZoneInfo(timezone)):%Y-%m-%d}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="overview-export", icon=":material/download:", type="primary", width="stretch")
 

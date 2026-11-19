@@ -119,7 +119,8 @@ def _vulnerabilities(current: state.Week, previous: state.Week | None, data: sta
     ])
     st.caption("A finding is one server, Qualys ID and port. Fixed means it left the report while the server is still "
                "in this week's reports (the CS report lists every server). Findings on servers missing from this "
-               "week's reports are counted as not rescanned instead.")
+               "week's reports are counted as not rescanned instead. The report can list the same finding twice, "
+               "so these counts can be a little lower than the open findings on the Overview page.")
     _breakdown(dl.VULN, scoped, "vulnerabilities")
     _details(dl.VULN, scoped, "vulnerabilities", history.STILL_OPEN)
 
@@ -181,7 +182,8 @@ _TREND_METRICS = {
 def _trend(weeks: list[state.Week], data: state.Data) -> None:
     with st.container(border=True):
         theme.title("Weekly trend", f"Every weekly file in {settings.data_dir().name}/, in the sidebar scope. "
-                                    "A week runs Sunday to Saturday; blank means no file of that kind that week.")
+                                    "Each point is one weekly set of reports, dated by its newest report; blank "
+                                    "means that set has no file of that kind.")
         totals = state.trend(weeks, data)
         if totals.empty:
             st.caption("No readable report files.")
@@ -201,7 +203,7 @@ def _trend(weeks: list[state.Week], data: state.Data) -> None:
             charts.show(charts.trend_lines(totals, ["CS gaps", "Servers with a CS gap"], [charts.PURPLE, charts.AMBER],
                                            "Gaps"))
         table = totals.sort_values("Week", ascending=False).assign(Week=lambda f: f["Week"].dt.strftime("%d %b %Y"))
-        table = table.rename(columns={"Week": "Week of", **{k: v for k, v in _TREND_METRICS.items() if k in table}})
+        table = table.rename(columns={"Week": "Reports of", **{k: v for k, v in _TREND_METRICS.items() if k in table}})
         components.capped_table(table, "trends-weekly", "weekly_trend.csv")
 
         theme.title("By application", "Pick a measure; one column per week, newest first.")

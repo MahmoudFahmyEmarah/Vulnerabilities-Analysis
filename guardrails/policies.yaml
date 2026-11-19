@@ -34,7 +34,8 @@ scheduling:
 
 llm_input:
   max_field_chars: 1500       # longer scanner text is truncated before it reaches the model
-  max_servers_listed: 60
+  max_servers_listed: 60      # above this, the per-server work detail is left out of the scheduling prompt;
+                              # server names are always sent so every server can be placed (mask them below)
   mask_ip_addresses: false    # true = replace IPs with server-1, server-2 ... in prompts
   never_send:                 # personal data columns that never leave the app
     - Application Delegate

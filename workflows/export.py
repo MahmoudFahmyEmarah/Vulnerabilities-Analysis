@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from io import BytesIO
 from xml.etree import ElementTree
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -113,6 +114,11 @@ def application_summary(vulns: pd.DataFrame, mbss: pd.DataFrame, cs: pd.DataFram
     names: set[str] = set()
     for frame in frames:
         names.update(frame["Applications"].dropna().unique())
+    if changes is not None:   # an application whose findings were all fixed still gets its row
+        moved = changes.set_index("Applications") if "Applications" in changes.columns else changes
+        counted = [column for column in ("New", "Fixed") if column in moved]
+        if counted:
+            names.update(str(app) for app in moved.index[moved[counted].sum(axis=1) > 0] if pd.notna(app))
     out = pd.DataFrame(index=pd.Index(sorted(names), name="Application"))
 
     placed = [frame[["Applications", "Platform"]] for frame in frames if "Platform" in frame]
@@ -473,7 +479,8 @@ def _write_summary(ws, vulns, mbss, cs, devices, apps: pd.DataFrame, *, scope: s
     rows, pct = _Rows(ws), "0.0%"
 
     rows.add(_cell(ws, "Security posture export", _TITLE_FONT))
-    rows.add(_cell(ws, "Generated", _BOLD), f"{generated_at:%d %b %Y %H:%M}")
+    rows.add(_cell(ws, "Generated", _BOLD),
+             f"{generated_at:%d %b %Y %H:%M}" + (f" ({generated_at.tzinfo})" if generated_at.tzinfo else ""))
     rows.add(_cell(ws, "Scope", _BOLD), _text(ws, scope))
     for label, value in report_dates.items():
         rows.add(_cell(ws, label, _BOLD), _text(ws, value))
@@ -646,7 +653,7 @@ def build_workbook(vulns: pd.DataFrame, mbss: pd.DataFrame, cs: pd.DataFrame, de
                    scope: str = "All platforms", report_dates: dict[str, str] | None = None,
                    due_soon_days: int | None = None, staff_columns: Iterable[str] = STAFF_COLUMNS,
                    include_staff: bool = False, changes: pd.DataFrame | None = None,
-                   generated_at: datetime | None = None) -> bytes:
+                   generated_at: datetime | None = None, timezone: str | None = None) -> bytes:
     """Build the export workbook for the frames in scope and return it as .xlsx bytes.
 
     ``staff_columns`` are the personal-data columns (guardrails/policies.yaml -> llm_input.never_send);
@@ -692,7 +699,8 @@ def build_workbook(vulns: pd.DataFrame, mbss: pd.DataFrame, cs: pd.DataFrame, de
     workbook.properties.creator = "Security Posture Dashboard"
     sheets = {name: workbook.create_sheet(name) for name in SHEETS}
     _write_summary(sheets[SUMMARY], vulns, mbss, cs, devices, apps, scope=scope, report_dates=report_dates or {},
-                   generated_at=generated_at or datetime.now(), due_soon_days=due_soon_days, notes=notes)
+                   generated_at=generated_at or datetime.now(ZoneInfo(timezone) if timezone else None),
+                   due_soon_days=due_soon_days, notes=notes)
     bulk: dict[str, pd.DataFrame] = {}
     _write_applications(sheets[APPLICATIONS], apps, bulk)
     _write_top(sheets[TOP], apps)

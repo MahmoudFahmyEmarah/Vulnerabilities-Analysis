@@ -1,6 +1,7 @@
 """Shared data for every page: load the reports once, enrich them, apply the sidebar filters."""
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -60,7 +61,7 @@ def _apply_inventory(frame: pd.DataFrame, inventory: pd.DataFrame) -> pd.DataFra
 
 
 @st.cache_resource(show_spinner=False, max_entries=2)
-def _enrich(signatures: tuple, overrides_sig: tuple, server_sig: tuple, config_sig: tuple, labels_sig: int,
+def _enrich(signatures: tuple, overrides_sig: tuple, server_sig: tuple, config_sig: tuple, labels_sig: str,
             inventory_sig: tuple = ()) -> Data:
     """Load the three reports and add environment, SLA and topic columns. Cached until an input changes."""
     config, policies = settings.load_config(), settings.load_policies()
@@ -112,6 +113,13 @@ def _file_sig(path: Path) -> tuple:
     return (path.stat().st_mtime_ns,) if path.exists() else (0,)
 
 
+def _labels_sig() -> str:
+    """Fingerprint of the stored OS / application labels: changes when a label is added or changed, not only
+    when their number does, so a relabelled title refreshes the cached data."""
+    labels = sorted(KnowledgeBase().topic_labels().items())
+    return hashlib.sha1(repr(labels).encode("utf-8")).hexdigest()
+
+
 def load() -> Data:
     """Return the enriched data, reading the Excel files only when something changed."""
     with st.spinner("Reading the reports. The first read of a new file takes about half a minute."):
@@ -123,7 +131,7 @@ def load() -> Data:
             path = next((p for p in options if p.name == picked), options[0] if options else None)
             chosen.append(_signature(path))
         arguments = (tuple(chosen), _file_sig(settings.overrides_file()), _file_sig(settings.server_list_file()),
-                     _file_sig(settings.CONFIG_FILE) + _file_sig(settings.POLICIES_FILE), len(KnowledgeBase().topic_labels()),
+                     _file_sig(settings.CONFIG_FILE) + _file_sig(settings.POLICIES_FILE), _labels_sig(),
                      _file_sig(settings.inventory_file()) if settings.inventory_file() else ())
         return _enrich(*arguments)
 
@@ -131,23 +139,31 @@ def load() -> Data:
 # ---------------------------------------------------------------------- weeks ----
 @dataclass(frozen=True)
 class Week:
-    """One reporting week (Sunday to Saturday) and the newest file of each kind dated in it."""
+    """One weekly set of reports (at most one file of each kind) and the date of its newest report."""
     start: pd.Timestamp
     files: dict[str, dl.FileInfo]
+    repeat: int = 0   # >0 when an earlier set is dated the same day (the same report added twice)
 
     @property
     def label(self) -> str:
-        return f"Week of {self.start:%d %b %Y}"
+        return f"Reports of {self.start:%d %b %Y}" + (f" ({self.repeat + 1})" if self.repeat else "")
 
 
 def weeks() -> list[Week]:
-    """Every week with at least one readable report file, newest first. Files are dated by their data."""
-    by_week: dict[pd.Timestamp, dict[str, dl.FileInfo]] = {}
-    for kind, infos in dl.describe_files(settings.data_dir()).items():
-        for info in infos:   # newest first, so the newest file of a kind in a week wins
-            if info.error is None:
-                by_week.setdefault(history.week_start(info.report_date), {}).setdefault(kind, info)
-    return [Week(start, files) for start, files in sorted(by_week.items(), key=lambda item: item[0], reverse=True)]
+    """Every weekly set of readable report files, newest first (tools.history.group_reports).
+
+    Files are dated by their data, and every file is kept: two weekly reports never collapse into one
+    set, whatever weekday their scans ended on.
+    """
+    infos = [info for infos in dl.describe_files(settings.data_dir()).values() for info in infos
+             if info.error is None]
+    out: list[Week] = []
+    days: dict[pd.Timestamp, int] = {}
+    for start, files in history.group_reports(infos):
+        day = start.normalize()
+        out.append(Week(start, files, days.get(day, 0)))
+        days[day] = days.get(day, 0) + 1
+    return out
 
 
 def _context_sig() -> tuple:
@@ -194,7 +210,8 @@ def _with_environment(frame: pd.DataFrame, inventory: pd.DataFrame) -> pd.DataFr
     """Add Environment / Env Source with the same rules as the other pages, for any set of servers."""
     if frame.empty:
         return frame.assign(Environment=pd.Series(dtype="object"), **{"Env Source": pd.Series(dtype="object")})
-    resolved = _resolve(frame[["Device Name", "Applications"]], _server_list(_file_sig(settings.server_list_file())),
+    names = [c for c in ("Device Name", "Applications", "Report Application") if c in frame]
+    resolved = _resolve(frame[names], _server_list(_file_sig(settings.server_list_file())),
                         inventory)
     return frame.merge(resolved, on="Device Name", how="left")
 

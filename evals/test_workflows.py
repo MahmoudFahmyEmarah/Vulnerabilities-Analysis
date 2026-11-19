@@ -215,3 +215,22 @@ def test_guardrail_keeps_production_after_development_and_its_soak(calendar):
     production = [w for w in plan["waves"] if w["environment"] == PROD]
     assert sorted(s for w in production for s in w["servers"]) == ["p1", "p2"]
     assert all(w["start"] >= dev_end + timedelta(days=2) for w in production)
+
+
+def test_a_hung_endpoint_is_not_retried(monkeypatch):
+    import httpx
+    from openai import APITimeoutError
+    from agents.remediation import RemediationAgent
+
+    calls = []
+
+    class Hung:
+        def invoke(self, messages):
+            calls.append(1)
+            raise APITimeoutError(request=httpx.Request("POST", "http://model/v1/chat/completions"))
+
+    agent = RemediationAgent()
+    monkeypatch.setattr(agent, "_chat", lambda model, json_mode: Hung())
+    with pytest.raises(base_agent.AgentError):
+        agent.run(template="remediation_vulnerability.md", scan_data="x", example="{}")
+    assert len(calls) == 1

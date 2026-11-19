@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime
@@ -32,7 +33,7 @@ import settings
 
 log = logging.getLogger(__name__)
 
-LOADER_VERSION = "4"  # bump when normalisation changes, to invalidate cached Parquet
+LOADER_VERSION = "5"  # bump when normalisation changes, to invalidate cached Parquet
 
 VULN = "vulnerabilities"
 MBSS = "mbss"
@@ -71,7 +72,9 @@ CS_CONTROLS = {
 }
 CS_STATES = ["Implemented", "Partial", "Gap", "Exception", "Not in scope"]
 _CS_IMPLEMENTED = {"implemented", "scanned with authentication"}
-_CS_NOT_IN_SCOPE = {"not applicable", "out of scope", "scanned - authentication not applicable", ""}
+# A blank status is not "not in scope": nothing says the control applies or not, so it counts as a gap
+# (the report's wording stays visible as "(blank)" in the Status column).
+_CS_NOT_IN_SCOPE = {"not applicable", "out of scope", "scanned - authentication not applicable"}
 
 
 class SchemaError(ValueError):
@@ -158,11 +161,23 @@ def _cache_file(kind: str, path: Path) -> Path:
 
 
 def _write_atomic(target: Path, write: Callable[[Path], None]) -> None:
-    """Write to a temporary file first, so a crash or a second user never leaves a half-written cache."""
-    temporary = target.with_name(f"{target.name}.{os.getpid()}.tmp")
+    """Write to a temporary file first, so a crash or a second user never leaves a half-written cache.
+
+    Every call gets its own temporary file: Streamlit serves all users from one process, so two
+    sessions reading a new report at the same time would otherwise write to the same one. Cache
+    files are keyed by their source file, so when another session moved its copy in first (and
+    Windows will not replace a file that is open), that copy is just as good and this one is dropped.
+    """
+    handle, name = tempfile.mkstemp(dir=target.parent, prefix=f"{target.name}.", suffix=".tmp")
+    os.close(handle)
+    temporary = Path(name)
     try:
         write(temporary)
-        os.replace(temporary, target)
+        try:
+            os.replace(temporary, target)
+        except OSError:
+            if not target.exists():
+                raise
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -322,9 +337,13 @@ SUMMARY_COLUMNS = {
 }
 
 
-def key_text(values: pd.Series) -> pd.Series:
-    """Key values as comparable text: 443, 443.0 and ' 443' match; a blank key is ''."""
-    return values.astype("string").str.strip().str.replace(r"\.0$", "", regex=True).fillna("")
+def key_text(values: pd.Series, numeric: bool = True) -> pd.Series:
+    """Key values as comparable text: 443, 443.0 and ' 443' match; a blank key is ''.
+
+    ``numeric=False`` only trims: a server address such as 10.1.2.0 must keep its last ".0".
+    """
+    text = values.astype("string").str.strip()
+    return (text.str.replace(r"\.0$", "", regex=True) if numeric else text).fillna("")
 
 
 def unique_findings(kind: str, frame: pd.DataFrame) -> pd.DataFrame:
@@ -333,7 +352,8 @@ def unique_findings(kind: str, frame: pd.DataFrame) -> pd.DataFrame:
     A key column the report lacks (an older report without "Port Number") counts as blank.
     """
     key = FINDING_KEY[kind]
-    out = frame.assign(**{column: key_text(frame[column]) if column in frame else "" for column in key})
+    out = frame.assign(**{column: key_text(frame[column], numeric=column != "Device Name") if column in frame else ""
+                          for column in key})
     column = REPORT_DATE_COLUMN.get(kind)
     if column in out.columns:
         out = out.sort_values(column, ascending=False, kind="stable")
