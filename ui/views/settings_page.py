@@ -26,19 +26,29 @@ def _save_env(values: dict[str, str]) -> None:
 
 def _model_section() -> None:
     config = base_agent.llm_settings()
+    editable = settings.model_settings_editable()
+    has_key = config.api_key not in ("", "not-needed")
     with st.container(border=True):
         theme.title("Model endpoint", "Any OpenAI-compatible server (vLLM, Ollama, TGI, LiteLLM). Only the endpoint is required.")
+        if not editable:
+            st.info("The endpoint applies to every user, so it is set where the app is hosted (LLM_BASE_URL, LLM_MODEL "
+                    "and LLM_API_KEY on the CML Application) and is read-only here. Set MODEL_SETTINGS_EDITABLE=1 "
+                    "on the application to allow changes from this page.", icon=":material/lock:")
         one, two, three = st.columns([3, 2, 2])
         url = one.text_input("Endpoint (base URL ending in /v1)", value=config.base_url, key="set_url",
-                             placeholder="http://llm-host:8000/v1")
+                             placeholder="http://llm-host:8000/v1", disabled=not editable)
         model = two.text_input("Model name (blank = ask the endpoint)", value=config.model, key="set_model",
-                               placeholder="gpt-oss-120b")
-        key = three.text_input("API key (if the server needs one)", type="password", key="set_key",
-                               value="" if config.api_key == "not-needed" else config.api_key)
+                               placeholder="gpt-oss-120b", disabled=not editable)
+        # The saved key is never sent to the browser: the field starts empty and blank keeps the saved key.
+        key = three.text_input("API key (if the server needs one)", type="password", key="set_key", value="",
+                               placeholder="A key is saved; blank keeps it" if has_key else "No key saved",
+                               disabled=not editable)
+        forget = editable and has_key and three.checkbox("Remove the saved key", key="set_key_clear")
+        api_key = key.strip() or ("not-needed" if forget else config.api_key)
         test, save, _ = st.columns([1, 1, 4])
         if test.button("Test connection", key="set_test", width="stretch"):
             candidate = base_agent.LLMSettings(**{**config.__dict__, "base_url": url.strip().rstrip("/"),
-                                                  "model": model.strip(), "api_key": key.strip() or "not-needed"})
+                                                  "model": model.strip(), "api_key": api_key})
             try:
                 served = base_agent.list_models(candidate, refresh=True)
                 chosen = base_agent.resolve_model(candidate)
@@ -46,9 +56,11 @@ def _model_section() -> None:
                            f"The app will use **{chosen}**.")
             except AgentError as error:
                 st.error(str(error))
-        if save.button("Save", type="primary", key="set_save", width="stretch"):
-            _save_env({"LLM_BASE_URL": url.strip().rstrip("/"), "LLM_MODEL": model.strip(),
-                       "LLM_API_KEY": key.strip() or "not-needed"})
+        if editable and save.button("Save", type="primary", key="set_save", width="stretch"):
+            values = {"LLM_BASE_URL": url.strip().rstrip("/"), "LLM_MODEL": model.strip()}
+            if key.strip() or forget:   # otherwise the saved key stays as it is
+                values["LLM_API_KEY"] = key.strip() or "not-needed"
+            _save_env(values)
             st.success("Saved to .env. New requests use it immediately. A blank endpoint falls back to the "
                        "LLM_BASE_URL environment variable, if one is set.")
         st.caption("Scan text sent to the model is limited to whitelisted fields; names of people are never sent. "
@@ -107,7 +119,12 @@ def _environment_section(data: state.Data) -> None:
         counts = devices.groupby("Env Source")["Device Name"].nunique()
         theme.badges([(f"{source}: {count:,} servers", "red" if source == env.SRC_ASSUMED else "gray")
                       for source, count in counts.items()])
-        overrides = env.load_overrides(settings.overrides_file())
+        try:
+            overrides = env.load_overrides(settings.overrides_file())
+        except Exception as error:  # noqa: BLE001 - do not offer a save that would overwrite the file
+            st.error(f"Could not read {settings.overrides_file().name}: {error}. Fix or remove the file to edit "
+                     "the mapping here. Until then every server is treated as production.")
+            return
         # The mapping applies to exactly the servers counted here: those with no confirmed environment, or
         # already set in the override file. Servers that the AI inventory, the application name or the
         # server list place keep their environment, so mapping an application never flips them.

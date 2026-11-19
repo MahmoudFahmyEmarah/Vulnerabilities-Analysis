@@ -41,6 +41,10 @@ Only the endpoint is needed. Any OpenAI-compatible server works (vLLM, Ollama, T
 The model name is read from the endpoint. When it serves several, `gpt-oss-120b` is preferred, then Qwen
 (`config.yaml` → `llm.preferred_models`). Set `LLM_MODEL` to force one.
 
+The endpoint applies to every user of the app, so on a CML Application the Settings page shows it read-only
+and the environment variables decide. `MODEL_SETTINGS_EDITABLE=1` allows changes from the page again;
+`MODEL_SETTINGS_EDITABLE=0` locks the page anywhere. A saved API key is never shown on the page.
+
 Without an endpoint everything except the AI buttons works, and the Fix Schedule shows its rule-based draft.
 
 ## Host it as a CML Application

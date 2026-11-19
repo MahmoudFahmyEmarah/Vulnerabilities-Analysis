@@ -207,5 +207,24 @@ def test_mapping_an_application_only_changes_the_servers_it_lists():
     assert environment.remap_applications(overrides, {"DataIku": listed}, {"DataIku": None}).empty   # blank clears
 
 
+def test_a_renamed_reference_column_is_reported_not_crashed_on(tmp_path):
+    pd.DataFrame({"IP Address": ["10.7.0.1"], "Enviroment": ["Dev"]}).to_excel(tmp_path / "list.xlsx", index=False)
+    with pytest.raises(environment.ReferenceFileError, match="IP"):
+        environment.load_server_list(tmp_path / "list.xlsx")
+    (tmp_path / "overrides.csv").write_text("Device Name,Applications,Env\n10.7.0.1,X,Production\n", "utf-8")
+    with pytest.raises(environment.ReferenceFileError, match="Environment"):
+        environment.load_overrides(tmp_path / "overrides.csv")
+
+
+def test_model_settings_are_read_only_on_cml(monkeypatch):
+    monkeypatch.delenv("MODEL_SETTINGS_EDITABLE", raising=False)
+    monkeypatch.delenv("CDSW_APP_PORT", raising=False)
+    assert settings.model_settings_editable()            # local run
+    monkeypatch.setenv("CDSW_APP_PORT", "8100")
+    assert not settings.model_settings_editable()        # CML Application
+    monkeypatch.setenv("MODEL_SETTINGS_EDITABLE", "1")
+    assert settings.model_settings_editable()
+
+
 def test_missing_inventory_file_switches_the_feature_off(tmp_path):
     assert inventory.load_inventory(tmp_path / "nope.xlsx").empty and inventory.load_inventory(None).empty

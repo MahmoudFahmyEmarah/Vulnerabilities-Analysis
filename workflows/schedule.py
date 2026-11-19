@@ -16,7 +16,7 @@ import pandas as pd
 
 from agents.scheduler import SchedulerAgent
 from guardrails import input_checks
-from guardrails.output_checks import enforce_schedule
+from guardrails.output_checks import enforce_schedule, strip_images
 from tools.environment import DEV, PROD, SRC_ASSUMED
 from tools.saudi_calendar import SaudiCalendar, Slot
 
@@ -146,9 +146,11 @@ def _pack(servers: list[str], minutes: dict[str, int], slots: list[Slot], parall
 def _guard(plan: dict[str, Any], slots: list[Slot], context: dict[str, Any], calendar: SaudiCalendar,
            policies: dict[str, Any]) -> dict[str, Any]:
     """Run the schedule guardrail with this application's work estimates."""
-    parallel = max(1, int(policies["scheduling"]["max_parallel_servers"]))
+    rules = policies["scheduling"]
     return enforce_schedule(plan, slots, context["servers"], calendar,
-                            minutes=_server_minutes(context, policies), parallel=parallel)
+                            minutes=_server_minutes(context, policies),
+                            parallel=max(1, int(rules["max_parallel_servers"])),
+                            soak_days=int(rules["soak_days_before_production"]))
 
 
 def _wave(name: str, environment: str, slot: Slot, servers: list[str], used: int,
@@ -284,6 +286,7 @@ def refine_with_ai(context: dict[str, Any], draft: dict[str, Any], calendar: Sau
                                             policy_summary(policies))
     if mask:
         answer = json.loads(input_checks.unmask_ips(json.dumps(answer, ensure_ascii=False), aliases))
+    answer = strip_images(answer)
 
     plan = {"application": context["application"], "source": "ai", "model": details["model"],
             "generated_at": now.isoformat(timespec="minutes"), **answer}

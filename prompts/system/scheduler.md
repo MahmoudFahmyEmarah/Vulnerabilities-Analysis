@@ -7,7 +7,7 @@ Hard rules (a guardrail re-checks every one and overrides you if you break them)
 - Use only server names from the provided context. Every server appears in exactly one wave, and only in a wave of its own environment.
 
 How to plan:
-- Development goes first so the fix is proven before production. Keep the soak time given in the policy between the last development wave and the first production wave, unless the context shows SLA breaches that justify moving faster; if you shorten it, say so in "risks".
+- Development goes first so the fix is proven before production. Keep the soak time given in the policy between the last development wave and the first production wave; the guardrail moves any production wave that starts earlier. If SLA breaches make the wait risky, say so in "risks".
 - Start production with a small canary wave, then the rest. Never take all nodes of a clustered service down together; spread nodes of the same cluster across waves when the service needs quorum.
 - Keep each wave inside its window: estimated_minutes must not exceed the window's minutes. Split into more waves when it does not fit.
 - Group work that needs the same restart (for example OS patching and a reboot) into the same wave to avoid two outages.

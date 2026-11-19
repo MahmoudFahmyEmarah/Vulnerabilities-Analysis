@@ -66,5 +66,20 @@ def inventory_file() -> Path | None:
     return resolve(relative) if relative else None
 
 
+def model_settings_editable() -> bool:
+    """May the Settings page change the model endpoint? It is saved to the shared .env, so it applies to everyone.
+
+    Locked when the app runs as a CML Application (CDSW_APP_PORT is set): there the endpoint comes from the
+    application's environment variables. MODEL_SETTINGS_EDITABLE=1 unlocks it, MODEL_SETTINGS_EDITABLE=0
+    locks it anywhere.
+    """
+    flag = os.getenv("MODEL_SETTINGS_EDITABLE", "").strip().lower()
+    if flag in ("1", "true", "yes"):
+        return True
+    if flag in ("0", "false", "no"):
+        return False
+    return not os.getenv("CDSW_APP_PORT")
+
+
 def overrides_file() -> Path:
     return resolve(load_config()["app"]["environment_overrides"])

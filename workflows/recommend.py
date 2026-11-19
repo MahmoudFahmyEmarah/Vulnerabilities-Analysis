@@ -29,10 +29,11 @@ def finding_key(check_type: str, row: dict[str, Any]) -> tuple[str, str]:
 
 
 def _result(record: dict[str, Any], source: str, seconds: float | None = None) -> dict[str, Any]:
+    content = output_checks.strip_images(record["content"])   # also cleans answers stored before the check
     return {
         "id": record["id"],
-        "content": record["content"],
-        "warnings": output_checks.review_recommendation(record["content"]),
+        "content": content,
+        "warnings": output_checks.review_recommendation(content),
         "source": source,
         "model": record.get("model", ""),
         "feedback": record.get("feedback"),
@@ -68,6 +69,7 @@ def get_recommendation(check_type: str, row: dict[str, Any], force: bool = False
     content, details = RemediationAgent().recommend(check_type, fields)
     if aliases:
         content = json.loads(input_checks.unmask_ips(json.dumps(content, ensure_ascii=False), aliases))
+    content = output_checks.strip_images(content)
 
     key, os_name = finding_key(check_type, row)
     record_id = kb.save_recommendation(check_type, key, os_name, str(row.get("Applications", "")), content,

@@ -77,7 +77,15 @@ def finding_for_model(check_type: str, row: dict[str, Any], policies: dict[str, 
     return cleaned
 
 
+_WRAPPER_TAG = re.compile(r"(?:<|&lt;)\s*/?\s*scan_data\b[^>]*?(?:>|&gt;)", re.IGNORECASE)
+
+
 def as_scan_data(fields: dict[str, str]) -> str:
-    """Render the fields inside <scan_data> so instructions hidden in scan text stay inert."""
-    body = "\n".join(f"[{name}]\n{value}\n" for name, value in fields.items())
+    """Render the fields inside <scan_data> so instructions hidden in scan text stay inert.
+
+    A scan_data tag inside the text itself (raw, or HTML-escaped and decoded by strip_html) is
+    replaced, so scanner text can never close the block early and pose as instructions.
+    """
+    body = "\n".join(f"[{name}]\n{_WRAPPER_TAG.sub('[scan_data tag removed]', value)}\n"
+                     for name, value in fields.items())
     return f"<scan_data>\n{body}</scan_data>"

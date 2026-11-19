@@ -83,14 +83,12 @@ def _enrich(signatures: tuple, overrides_sig: tuple, server_sig: tuple, config_s
         inventory = pd.DataFrame(columns=inv.COLUMNS)
     frames = {kind: _apply_inventory(frame, inventory) for kind, frame in frames.items()}
 
-    server_list = env.load_server_list(settings.server_list_file())
-    overrides = env.load_overrides(settings.overrides_file())
+    server_list = _read_server_list(errors)
     device_columns = ["Device Name", "Applications", "Platform", "Report Application"]
     known = [f[[c for c in device_columns if c in f.columns]] for f in frames.values() if not f.empty]
     all_devices = (pd.concat(known).drop_duplicates("Device Name") if known
                    else pd.DataFrame(columns=device_columns[:3]))
-    resolved = env.resolve_environments(all_devices, server_list, overrides,
-                                        policies["production"]["unknown_environment_is"], inventory)
+    resolved = _resolve(all_devices, server_list, inventory, errors)
     devices = all_devices.merge(resolved, on="Device Name", how="left")
     team_ips = frozenset(server_list["IP"]) if not server_list.empty else frozenset()
 
@@ -159,18 +157,45 @@ def _context_sig() -> tuple:
             _file_sig(settings.inventory_file()) if settings.inventory_file() else ())
 
 
+def _read_server_list(errors: dict[str, str] | None = None) -> pd.DataFrame:
+    """The team server list, or an empty one if it cannot be used (it only ranks above the Production default,
+    so leaving it out never turns a server into development)."""
+    try:
+        return env.load_server_list(settings.server_list_file())
+    except Exception as error:  # noqa: BLE001 - a broken reference file must not take every page down
+        if errors is not None:
+            errors["server_list"] = (f"Could not use the server list {settings.server_list_file().name}: {error}. "
+                                     "Its environments are left out until it is fixed.")
+        return pd.DataFrame(columns=env.SERVER_LIST_COLUMNS)
+
+
+def _resolve(devices: pd.DataFrame, server_list: pd.DataFrame, inventory: pd.DataFrame,
+             errors: dict[str, str] | None = None) -> pd.DataFrame:
+    """Environment / Env Source per server. If the override file cannot be read, every server is treated as
+    production: an override may be what marks a server as production, so ignoring the file is not safe."""
+    default = settings.load_policies()["production"]["unknown_environment_is"]
+    try:
+        overrides = env.load_overrides(settings.overrides_file())
+    except Exception as error:  # noqa: BLE001
+        if errors is not None:
+            errors["overrides"] = (f"Could not read {settings.overrides_file().name}: {error}. Every server is "
+                                   "treated as production until the file is fixed.")
+        resolved = devices[["Device Name"]].drop_duplicates("Device Name").copy()
+        return resolved.assign(Environment=env.PROD, **{"Env Source": env.SRC_ASSUMED})
+    return env.resolve_environments(devices, server_list, overrides, default, inventory)
+
+
 @st.cache_resource(show_spinner=False, max_entries=2)
 def _server_list(signature: tuple) -> pd.DataFrame:
-    return env.load_server_list(settings.server_list_file())
+    return _read_server_list()
 
 
 def _with_environment(frame: pd.DataFrame, inventory: pd.DataFrame) -> pd.DataFrame:
     """Add Environment / Env Source with the same rules as the other pages, for any set of servers."""
     if frame.empty:
         return frame.assign(Environment=pd.Series(dtype="object"), **{"Env Source": pd.Series(dtype="object")})
-    resolved = env.resolve_environments(frame[["Device Name", "Applications"]], _server_list(_file_sig(settings.server_list_file())),
-                                        env.load_overrides(settings.overrides_file()),
-                                        settings.load_policies()["production"]["unknown_environment_is"], inventory)
+    resolved = _resolve(frame[["Device Name", "Applications"]], _server_list(_file_sig(settings.server_list_file())),
+                        inventory)
     return frame.merge(resolved, on="Device Name", how="left")
 
 

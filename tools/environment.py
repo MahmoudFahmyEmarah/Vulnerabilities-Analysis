@@ -59,14 +59,24 @@ def _normalise(value: object) -> str | None:
     return None
 
 
+SERVER_LIST_COLUMNS = ["IP", "Application", "Cluster", "Environment", "Hostname"]
+
+
+class ReferenceFileError(ValueError):
+    """The server list or the override file exists but cannot be used."""
+
+
 def load_server_list(path: Path) -> pd.DataFrame:
     """Read the team inventory. Returns columns IP, Application, Cluster, Environment, Hostname."""
-    columns = ["IP", "Application", "Cluster", "Environment", "Hostname"]
     if not path.exists():
-        return pd.DataFrame(columns=columns)
+        return pd.DataFrame(columns=SERVER_LIST_COLUMNS)
     frame = pd.read_excel(path)
     frame = frame.rename(columns={"Enviroment": "Environment"})  # spelling used in the inventory file
-    frame = frame.loc[:, [c for c in columns if c in frame.columns]].dropna(subset=["IP"])
+    missing = [column for column in ("IP", "Environment") if column not in frame.columns]
+    if missing:
+        raise ReferenceFileError(f"{path.name} has no {' or '.join(missing)} column "
+                                 f"(found: {', '.join(map(str, frame.columns[:10]))})")
+    frame = frame.loc[:, [c for c in SERVER_LIST_COLUMNS if c in frame.columns]].dropna(subset=["IP"])
     frame["IP"] = frame["IP"].astype(str).str.strip()
     return frame.drop_duplicates("IP")
 
@@ -74,8 +84,12 @@ def load_server_list(path: Path) -> pd.DataFrame:
 def load_overrides(path: Path) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame(columns=OVERRIDE_COLUMNS)
-    frame = pd.read_csv(path, dtype=str, comment="#").reindex(columns=OVERRIDE_COLUMNS)
-    return frame.dropna(subset=["Environment"])
+    frame = pd.read_csv(path, dtype=str, comment="#")
+    if len(frame) and ("Environment" not in frame.columns
+                       or not {"Device Name", "Applications"} & set(frame.columns)):
+        raise ReferenceFileError(f"{path.name} needs the columns {', '.join(OVERRIDE_COLUMNS)} "
+                                 f"(found: {', '.join(map(str, frame.columns))})")
+    return frame.reindex(columns=OVERRIDE_COLUMNS).dropna(subset=["Environment"])
 
 
 def save_overrides(path: Path, frame: pd.DataFrame) -> None:
