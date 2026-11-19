@@ -8,6 +8,8 @@ One place to track three security checks for the platform's servers, with AI hel
 - **Trends** — what changed since last week (new, fixed, still open, not rescanned) and the weekly trend
 - **Fix Schedule** — a per-application plan: development first, production only outside Saudi working hours
 - **AI recommendations** — step-by-step fixes from a self-hosted model, stored and reused
+- **Excel export** — *Export to Excel* on the Overview page: one workbook for the sidebar scope with a summary and
+  charts, one row per application, and every open finding, failed MBSS check and server with a CS gap
 
 ## Run it locally
 
@@ -116,7 +118,7 @@ agents/             model gateway (LangChain) and the remediation, scheduler and
 prompts/            system prompts, templates, few-shot examples, changelog
 tools/              report loaders, OS/application rules, environment resolver, Saudi calendar
 memory/             knowledge base (SQLite): stored recommendations and labels
-workflows/          recommendation flow and fix-schedule flow
+workflows/          recommendation flow, fix-schedule flow and the Excel export
 guardrails/         what may be sent to the model, checks on what comes back, change-window policy
 evals/              tests, classifier golden set, mock model endpoint
 observability/      one log line per model call (no prompt text)
@@ -139,3 +141,6 @@ canned answers; run `python -m evals.mock_llm` to demo the app without a real mo
 Report files, `.env`, the knowledge base, the cache and the environment mapping are in `.gitignore`.
 Only whitelisted finding fields are sent to the model; names of people never are, and IP addresses can be
 masked (`guardrails/policies.yaml` → `llm_input`).
+
+The Excel export contains server IPs and host names, like the reports. It leaves out the staff-name columns
+listed in `llm_input.never_send` and says so on its Summary sheet.

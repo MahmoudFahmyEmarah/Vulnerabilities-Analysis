@@ -1,32 +1,60 @@
 """Overview: the three checks side by side, and where to look first."""
 from __future__ import annotations
 
+from datetime import datetime
+
 import pandas as pd
 import streamlit as st
 
 import settings
-from tools import environment as env
+from tools import data_loader as dl, environment as env
 from ui import charts, components, state, theme
+from workflows import export
 
 
 def _by_application(vulns: pd.DataFrame, mbss: pd.DataFrame, cs: pd.DataFrame, devices: pd.DataFrame) -> pd.DataFrame:
-    table = devices.groupby("Applications").agg(
-        Servers=("Device Name", "nunique"),
-        Production=("Environment", lambda s: int((s == env.PROD).sum())),
-        Development=("Environment", lambda s: int((s == env.DEV).sum())),
-    )
+    """The short per-application table; the counts come from the Excel export's application summary."""
+    summary = export.application_summary(vulns, mbss, cs, devices)
+    table = summary[["Application", "Servers", "Production", "Development"]].rename(
+        columns={"Application": "Applications"})
     if not vulns.empty:
-        grouped = vulns.groupby("Applications")
-        table["Open vulnerabilities"] = grouped.size()
-        table["Past SLA"] = grouped["SLA Status"].apply(lambda s: int((s == "Breached").sum()))
-        table["High or critical"] = grouped["Severity"].apply(lambda s: int(s.isin(["High", "Critical"]).sum()))
+        table["Open vulnerabilities"] = summary["Open findings"]
+        table["Past SLA"] = summary["Past SLA"]
+        table["High or critical"] = summary["Critical"] + summary["High"]
     if not mbss.empty:
-        table["MBSS failed"] = mbss.groupby("Applications").size()
+        table["MBSS failed"] = summary["MBSS failed checks"]
     if not cs.empty:
-        table["CS control gaps"] = cs.groupby("Applications")["Gaps"].sum()
-    table = table.fillna(0).astype(int).reset_index()
+        table["CS control gaps"] = summary[[f"{control} gaps" for control in dl.CS_CONTROLS]].sum(axis=1)
     sort_by = [c for c in ("Past SLA", "MBSS failed", "CS control gaps") if c in table]
-    return table.sort_values(sort_by, ascending=False) if sort_by else table
+    return table.sort_values(sort_by, ascending=False, kind="stable") if sort_by else table
+
+
+def _export_button(data: state.Data, vulns: pd.DataFrame, mbss: pd.DataFrame, cs: pd.DataFrame,
+                   devices: pd.DataFrame, config: dict) -> None:
+    """Everything in the sidebar scope as one Excel workbook, built only when the button is clicked."""
+    cs_file = data.files.get(dl.CS)
+    # Worked out now: the build runs on another thread, where session state is not available.
+    options = {
+        "scope": state.scope_label(),
+        "report_dates": {
+            "Vulnerability report as of": state.as_of(data.vulns, "Last Scan Date Time"),
+            "MBSS report as of": state.as_of(data.mbss, "Evaluation Date"),
+            "CS Controls report file dated": (f"{datetime.fromtimestamp(cs_file.stat().st_mtime):%d %b %Y}"
+                                              if cs_file and cs_file.exists() else "no file"),
+        },
+        "due_soon_days": int(config["sla_due_soon_days"]),
+        "staff_columns": settings.load_policies()["llm_input"].get("never_send", export.STAFF_COLUMNS),
+    }
+    applications = devices["Applications"].nunique()
+    left, right = st.columns([2, 1], vertical_alignment="center")
+    left.caption(f"Export to Excel: a summary with charts, one row for each of the {applications:,} applications in "
+                 f"scope, and every open finding ({len(vulns):,}), failed MBSS check ({len(mbss):,}) and CS gap. "
+                 "Building the full workbook takes a few seconds.")
+    right.download_button(
+        "Export to Excel", lambda: export.build_workbook(vulns, mbss, cs, devices, **options),
+        file_name=f"security_posture_{datetime.now():%Y-%m-%d}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="overview-export", icon=":material/download:", type="primary", width="stretch")
 
 
 def _inventory_check(data: state.Data) -> None:
@@ -92,6 +120,7 @@ def render() -> None:
     if devices.empty:
         st.info("No report files were found for this scope. Add the Excel reports on the Settings page.")
         return
+    _export_button(data, vulns, mbss, cs, devices, config)
 
     breached = int((vulns["SLA Status"] == "Breached").sum()) if not vulns.empty else 0
     due_soon = int((vulns["SLA Status"] == "Due soon").sum()) if not vulns.empty else 0
