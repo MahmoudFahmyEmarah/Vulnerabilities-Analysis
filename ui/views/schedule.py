@@ -138,7 +138,16 @@ def render() -> None:
 
     plan_key = f"plan::{application}::{'|'.join(sorted(include))}"
     draft = workflow.draft_plan(context, calendar, policies)
-    plan = st.session_state.get(plan_key, draft)
+    # A refined plan is kept only for the servers and the day it was made for: a change of scope, a new
+    # report or a new day brings back the draft, so an old plan with past windows is never shown.
+    signature = (tuple(context["servers"][env.DEV]), tuple(context["servers"][env.PROD]),
+                 f"{calendar.now():%Y-%m-%d}")
+    saved = st.session_state.get(plan_key)
+    if saved and saved["signature"] != signature:
+        st.session_state.pop(plan_key, None)
+        saved = None
+        st.caption("The AI-refined plan was made for other servers or another day, so the draft is shown again.")
+    plan = saved["plan"] if saved else draft
 
     left, middle, _ = st.columns([1.3, 1.3, 4])
     configured = base_agent.is_configured()
@@ -147,7 +156,7 @@ def render() -> None:
         try:
             with st.spinner("The scheduling agent is reviewing the draft…"):
                 plan = workflow.refine_with_ai(context, draft, calendar, policies)
-            st.session_state[plan_key] = plan
+            st.session_state[plan_key] = {"plan": plan, "signature": signature}
         except AgentError as error:
             st.error(str(error))
     if middle.button("Back to the draft", disabled=plan_key not in st.session_state, key="s_reset", width="stretch"):

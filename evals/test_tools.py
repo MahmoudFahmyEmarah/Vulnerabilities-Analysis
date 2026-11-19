@@ -228,3 +228,17 @@ def test_model_settings_are_read_only_on_cml(monkeypatch):
 
 def test_missing_inventory_file_switches_the_feature_off(tmp_path):
     assert inventory.load_inventory(tmp_path / "nope.xlsx").empty and inventory.load_inventory(None).empty
+
+
+def test_report_name_places_an_inventory_server_and_blank_cs_status_is_a_gap():
+    devices = pd.DataFrame({"Device Name": ["10.6.0.1"], "Applications": ["AI Data Lake"],
+                            "Report Application": ["CEM Kafka Prod"]})          # inventory renamed it
+    inventory_frame = pd.DataFrame({"IP": ["10.6.0.1"], "Environment": [None]})   # inventory gives no environment
+    server_list = pd.DataFrame({"IP": ["10.6.0.1"], "Environment": ["Development"]})
+    result = environment.resolve_environments(devices, server_list, pd.DataFrame(columns=environment.OVERRIDE_COLUMNS),
+                                              PROD, inventory_frame).iloc[0]
+    assert (result["Environment"], result["Env Source"]) == (PROD, environment.SRC_APP_NAME)
+
+    from tools import data_loader
+    states = data_loader._cs_state(pd.Series(["Implemented", None, " ", "Not Applicable"]), None)
+    assert states.tolist() == ["Implemented", "Gap", "Gap", "Not in scope"]

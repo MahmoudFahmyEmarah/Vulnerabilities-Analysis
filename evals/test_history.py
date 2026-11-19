@@ -151,3 +151,9 @@ def test_simultaneous_cache_writes_do_not_collide(tmp_path):
         thread.join()
     assert not errors and target.read_bytes() == b"same content"
     assert [p.name for p in tmp_path.iterdir()] == ["cache.parquet"]   # no temporary files left behind
+
+
+def test_server_addresses_keep_their_last_octet_in_finding_keys():
+    frame = vulns([("10.1.2.0", "App A", 101.0, 443.0, "High", "Active", False)])
+    keys = dl.unique_findings(dl.VULN, frame)[["Device Name", "Qualys ID", "Port Number"]].iloc[0].tolist()
+    assert keys == ["10.1.2.0", "101", "443"]

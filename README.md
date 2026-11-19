@@ -72,7 +72,8 @@ Check before going live:
   to the application, or copy the files into `latest_Data/` instead.
 - **Shared state.** The knowledge base (`memory/store/knowledge_base.sqlite`), the environment mapping and the
   cache live in the project folder, so all users of the application share them. SQLite is fine for a small
-  team; it is not built for heavy concurrent writes.
+  team; it is not built for heavy concurrent writes. On CML the project folder is often network storage,
+  where SQLite's file locking is unreliable: keep a copy of `memory/store/` if the stored recommendations matter.
 
 `cml_app.py` listens on `127.0.0.1:$CDSW_APP_PORT`, which is what CML expects.
 

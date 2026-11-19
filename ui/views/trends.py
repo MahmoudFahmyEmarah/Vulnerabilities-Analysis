@@ -119,7 +119,8 @@ def _vulnerabilities(current: state.Week, previous: state.Week | None, data: sta
     ])
     st.caption("A finding is one server, Qualys ID and port. Fixed means it left the report while the server is still "
                "in this week's reports (the CS report lists every server). Findings on servers missing from this "
-               "week's reports are counted as not rescanned instead.")
+               "week's reports are counted as not rescanned instead. The report can list the same finding twice, "
+               "so these counts can be a little lower than the open findings on the Overview page.")
     _breakdown(dl.VULN, scoped, "vulnerabilities")
     _details(dl.VULN, scoped, "vulnerabilities", history.STILL_OPEN)
 
