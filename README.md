@@ -134,7 +134,6 @@ guardrails/         what may be sent to the model, checks on what comes back, ch
 evals/              tests, classifier golden set, mock model endpoint
 observability/      one log line per model call (no prompt text)
 ui/                 theme, charts, shared state, the six pages
-legacy/             the original scripts, kept for reference
 ```
 
 ## Tests
