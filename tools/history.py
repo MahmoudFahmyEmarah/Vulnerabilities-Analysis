@@ -223,6 +223,27 @@ def application_deltas(current: pd.DataFrame, previous: pd.DataFrame,
 
 
 # ---------------------------------------------------------------------- trend ----
+GROUP_DAYS = 3   # report files dated within this many days of a set's newest file belong to that set
+
+
+def group_reports(files: Iterable, days: int = GROUP_DAYS) -> list[tuple[pd.Timestamp, dict]]:
+    """Group report files into weekly sets, newest first: [(date of the set's newest file, {kind: file})].
+
+    ``files`` are tools.data_loader.FileInfo (anything with ``kind`` and ``report_date``). A set holds at
+    most one file of each kind, all dated within ``days`` of its newest file; a second file of the same
+    kind starts the next (older) set. Sets follow the reports' own dates rather than calendar weeks, so
+    two weekly reports are never merged just because their dates fall either side of a week boundary
+    (for example scans ending Sunday one week and Saturday the next).
+    """
+    sets: list[tuple[pd.Timestamp, dict]] = []
+    for info in sorted(files, key=lambda item: item.report_date, reverse=True):
+        date = pd.Timestamp(info.report_date)
+        if not sets or info.kind in sets[-1][1] or sets[-1][0] - date > pd.Timedelta(days=days):
+            sets.append((date, {}))
+        sets[-1][1][info.kind] = info
+    return sets
+
+
 def week_start(value) -> pd.Timestamp:
     """The Sunday that starts the (Saudi, Sunday-Thursday) working week containing ``value``."""
     day = pd.Timestamp(value).normalize()

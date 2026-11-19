@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 
@@ -113,3 +116,38 @@ def test_files_are_ordered_by_report_date_and_extra_sheets_are_skipped(tmp_path,
     assert infos[0].report_date == datetime(2026, 11, 8, 10) and infos[0].date_source == "Last Scan Date Time"
     assert infos[0].error is None and len(infos[0].skipped_sheets) == 1 and "Pivot" in infos[0].skipped_sheets[0]
     assert dl.load_summary(dl.VULN, infos[0].path)["Open findings"].sum() == 1
+
+
+def test_two_weekly_reports_stay_apart_whatever_weekday_the_scans_ended():
+    def info(kind: str, when: str) -> dl.FileInfo:
+        return dl.FileInfo(Path(f"{kind}-{when}.xlsx"), kind, datetime.fromisoformat(when), "test")
+
+    files = [info(dl.VULN, "2026-11-01T23:34"), info(dl.MBSS, "2026-11-01T00:00"), info(dl.CS, "2026-11-03T13:12"),
+             # next week's scans end on Saturday: the same Sunday-to-Saturday calendar week as the first report
+             info(dl.VULN, "2026-11-07T22:00"), info(dl.MBSS, "2026-11-07T00:00"), info(dl.CS, "2026-11-09T09:00")]
+    sets = history.group_reports(files)
+    assert [sorted(f.path.name for f in group.values()) for _, group in sets] == [
+        ["cs_controls-2026-11-09T09:00.xlsx", "mbss-2026-11-07T00:00.xlsx", "vulnerabilities-2026-11-07T22:00.xlsx"],
+        ["cs_controls-2026-11-03T13:12.xlsx", "mbss-2026-11-01T00:00.xlsx", "vulnerabilities-2026-11-01T23:34.xlsx"]]
+
+
+def test_simultaneous_cache_writes_do_not_collide(tmp_path):
+    target, errors = tmp_path / "cache.parquet", []
+
+    def slow_write(path: Path) -> None:
+        path.write_bytes(b"same content")
+        time.sleep(0.2)
+
+    def worker() -> None:
+        try:
+            dl._write_atomic(target, slow_write)
+        except Exception as error:  # noqa: BLE001
+            errors.append(error)
+
+    threads = [threading.Thread(target=worker) for _ in range(3)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert not errors and target.read_bytes() == b"same content"
+    assert [p.name for p in tmp_path.iterdir()] == ["cache.parquet"]   # no temporary files left behind

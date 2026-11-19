@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime
@@ -158,11 +159,23 @@ def _cache_file(kind: str, path: Path) -> Path:
 
 
 def _write_atomic(target: Path, write: Callable[[Path], None]) -> None:
-    """Write to a temporary file first, so a crash or a second user never leaves a half-written cache."""
-    temporary = target.with_name(f"{target.name}.{os.getpid()}.tmp")
+    """Write to a temporary file first, so a crash or a second user never leaves a half-written cache.
+
+    Every call gets its own temporary file: Streamlit serves all users from one process, so two
+    sessions reading a new report at the same time would otherwise write to the same one. Cache
+    files are keyed by their source file, so when another session moved its copy in first (and
+    Windows will not replace a file that is open), that copy is just as good and this one is dropped.
+    """
+    handle, name = tempfile.mkstemp(dir=target.parent, prefix=f"{target.name}.", suffix=".tmp")
+    os.close(handle)
+    temporary = Path(name)
     try:
         write(temporary)
-        os.replace(temporary, target)
+        try:
+            os.replace(temporary, target)
+        except OSError:
+            if not target.exists():
+                raise
     finally:
         temporary.unlink(missing_ok=True)
 

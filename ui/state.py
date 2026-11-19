@@ -131,23 +131,31 @@ def load() -> Data:
 # ---------------------------------------------------------------------- weeks ----
 @dataclass(frozen=True)
 class Week:
-    """One reporting week (Sunday to Saturday) and the newest file of each kind dated in it."""
+    """One weekly set of reports (at most one file of each kind) and the date of its newest report."""
     start: pd.Timestamp
     files: dict[str, dl.FileInfo]
+    repeat: int = 0   # >0 when an earlier set is dated the same day (the same report added twice)
 
     @property
     def label(self) -> str:
-        return f"Week of {self.start:%d %b %Y}"
+        return f"Reports of {self.start:%d %b %Y}" + (f" ({self.repeat + 1})" if self.repeat else "")
 
 
 def weeks() -> list[Week]:
-    """Every week with at least one readable report file, newest first. Files are dated by their data."""
-    by_week: dict[pd.Timestamp, dict[str, dl.FileInfo]] = {}
-    for kind, infos in dl.describe_files(settings.data_dir()).items():
-        for info in infos:   # newest first, so the newest file of a kind in a week wins
-            if info.error is None:
-                by_week.setdefault(history.week_start(info.report_date), {}).setdefault(kind, info)
-    return [Week(start, files) for start, files in sorted(by_week.items(), key=lambda item: item[0], reverse=True)]
+    """Every weekly set of readable report files, newest first (tools.history.group_reports).
+
+    Files are dated by their data, and every file is kept: two weekly reports never collapse into one
+    set, whatever weekday their scans ended on.
+    """
+    infos = [info for infos in dl.describe_files(settings.data_dir()).values() for info in infos
+             if info.error is None]
+    out: list[Week] = []
+    days: dict[pd.Timestamp, int] = {}
+    for start, files in history.group_reports(infos):
+        day = start.normalize()
+        out.append(Week(start, files, days.get(day, 0)))
+        days[day] = days.get(day, 0) + 1
+    return out
 
 
 def _context_sig() -> tuple:

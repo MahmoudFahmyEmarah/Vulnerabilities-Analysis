@@ -181,7 +181,8 @@ _TREND_METRICS = {
 def _trend(weeks: list[state.Week], data: state.Data) -> None:
     with st.container(border=True):
         theme.title("Weekly trend", f"Every weekly file in {settings.data_dir().name}/, in the sidebar scope. "
-                                    "A week runs Sunday to Saturday; blank means no file of that kind that week.")
+                                    "Each point is one weekly set of reports, dated by its newest report; blank "
+                                    "means that set has no file of that kind.")
         totals = state.trend(weeks, data)
         if totals.empty:
             st.caption("No readable report files.")
@@ -201,7 +202,7 @@ def _trend(weeks: list[state.Week], data: state.Data) -> None:
             charts.show(charts.trend_lines(totals, ["CS gaps", "Servers with a CS gap"], [charts.PURPLE, charts.AMBER],
                                            "Gaps"))
         table = totals.sort_values("Week", ascending=False).assign(Week=lambda f: f["Week"].dt.strftime("%d %b %Y"))
-        table = table.rename(columns={"Week": "Week of", **{k: v for k, v in _TREND_METRICS.items() if k in table}})
+        table = table.rename(columns={"Week": "Reports of", **{k: v for k, v in _TREND_METRICS.items() if k in table}})
         components.capped_table(table, "trends-weekly", "weekly_trend.csv")
 
         theme.title("By application", "Pick a measure; one column per week, newest first.")

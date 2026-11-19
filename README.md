@@ -26,7 +26,9 @@ kind is used. The first read of a new file takes about half a minute; after that
 
 Keep last week's files next to this week's: the **Trends** page compares two weeks and plots every week present.
 A file's week comes from its data (latest *Last Scan Date Time* or *Evaluation Date*), not from when it was
-copied; the CS report has no date column, so it uses the date the workbook was saved. Because the reports only
+copied; the CS report has no date column, so it uses the date the workbook was saved. Files dated within three
+days of each other form one weekly set, and a second file of the same kind starts the next set, so two weekly
+reports are never merged whichever weekday their scans ended on. Because the reports only
 list open findings, a finding that disappears counts as *Fixed* only if its server is still in this week's
 reports; otherwise it is *Not rescanned*. The rules live in `tools/history.py`.
 
