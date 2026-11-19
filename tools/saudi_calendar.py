@@ -94,12 +94,38 @@ class SaudiCalendar:
             self._by_year[year] = {day: str(name) for day, name in found.items()}
         return self._by_year[year]
 
-    def holiday_name(self, day: date) -> str | None:
+    def _listed(self, day: date) -> str | None:
+        """The holiday named for this exact day (policy dates included), without the weekend rule."""
         if day in self._removed:
             return None
         if day in self._extra:
             return "Change freeze (policy)"
         return self._holidays(day.year).get(day)
+
+    def holiday_name(self, day: date) -> str | None:
+        """Holiday or freeze name for a day, or None.
+
+        A weekend day that lies between two holiday dates is part of the holiday break. The holiday
+        table leaves it out (it moves the day off to an "(observed)" weekday instead), so without
+        this rule the Saturday in the middle of an Eid break would look like a normal weekend day.
+        """
+        name = self._listed(day)
+        if name or day in self._removed or not self.is_weekend(day):
+            return name
+        before = after = None
+        for offset in range(1, 8):   # walk over the rest of the weekend on both sides
+            if before is None:
+                previous = day - timedelta(days=offset)
+                if self._listed(previous) or not self.is_weekend(previous):
+                    before = previous
+            if after is None:
+                following = day + timedelta(days=offset)
+                if self._listed(following) or not self.is_weekend(following):
+                    after = following
+        first = self._listed(before) if before else None
+        if first and after and self._listed(after):
+            return f"{first} (weekend within the holiday break)"
+        return None
 
     def is_weekend(self, day: date) -> bool:
         return day.weekday() not in self.working_days

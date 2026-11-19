@@ -119,7 +119,10 @@ def _server_minutes(context: dict[str, Any], policies: dict[str, Any]) -> dict[s
 
 
 def _pack(servers: list[str], minutes: dict[str, int], slots: list[Slot], parallel: int):
-    """Fill windows in order with batches of ``parallel`` servers. Returns (waves, unscheduled)."""
+    """Fill windows in order with batches of ``parallel`` servers. Returns (waves, unscheduled).
+
+    A window too short for the next batch is skipped, so no wave holds more work than its window.
+    """
     queue = list(servers)
     waves: list[tuple[Slot, list[str], int]] = []
     for slot in slots:
@@ -130,13 +133,22 @@ def _pack(servers: list[str], minutes: dict[str, int], slots: list[Slot], parall
         while queue:
             batch = queue[:parallel]
             need = max(minutes[s] for s in batch)
-            if chosen and used + need > slot.minutes:
+            if used + need > slot.minutes:
                 break
             chosen += batch
             queue = queue[parallel:]
             used += need
-        waves.append((slot, chosen, used))
+        if chosen:
+            waves.append((slot, chosen, used))
     return waves, queue
+
+
+def _guard(plan: dict[str, Any], slots: list[Slot], context: dict[str, Any], calendar: SaudiCalendar,
+           policies: dict[str, Any]) -> dict[str, Any]:
+    """Run the schedule guardrail with this application's work estimates."""
+    parallel = max(1, int(policies["scheduling"]["max_parallel_servers"]))
+    return enforce_schedule(plan, slots, context["servers"], calendar,
+                            minutes=_server_minutes(context, policies), parallel=parallel)
 
 
 def _wave(name: str, environment: str, slot: Slot, servers: list[str], used: int,
@@ -190,16 +202,18 @@ def draft_plan(context: dict[str, Any], calendar: SaudiCalendar, policies: dict[
         eligible = [s for s in prod_slots if s.start >= earliest]
         canary_count = max(1, round(float(rules["canary_fraction"]) * len(prod))) if len(prod) >= 3 else 0
         canary, rest = prod[:canary_count], prod[canary_count:]
-        taken = 0
+        later = eligible
         if canary:
             packed, left = _pack(canary, minutes, eligible, parallel)
             unscheduled += left
-            taken = len(packed)
+            if packed:   # the rest starts after the canary, in windows the canary did not use
+                canary_end = packed[-1][0].end
+                later = [s for s in eligible if s.start >= canary_end]
             for index, (slot, servers, used) in enumerate(packed, 1):
                 name = "Production canary" if len(packed) == 1 else f"Production canary {index}"
                 waves.append(_wave(name, PROD, slot, servers, used, context,
                                    "A small first wave limits the impact if the change misbehaves."))
-        packed, left = _pack(rest, minutes, eligible[taken:], parallel)
+        packed, left = _pack(rest, minutes, later, parallel)
         unscheduled += left
         for index, (slot, servers, used) in enumerate(packed, 2 if canary else 1):
             waves.append(_wave(f"Production wave {index}", PROD, slot, servers, used, context,
@@ -224,7 +238,7 @@ def draft_plan(context: dict[str, Any], calendar: SaudiCalendar, policies: dict[
     plan = {"application": context["application"], "source": "rules", "model": "",
             "generated_at": now.isoformat(timespec="minutes"), "summary": summary.strip(), "risks": risks,
             "waves": waves}
-    return enforce_schedule(plan, slots, context["servers"], calendar)
+    return _guard(plan, slots, context, calendar, policies)
 
 
 # ---------------------------------------------------------------- AI refine ----
@@ -273,7 +287,7 @@ def refine_with_ai(context: dict[str, Any], draft: dict[str, Any], calendar: Sau
 
     plan = {"application": context["application"], "source": "ai", "model": details["model"],
             "generated_at": now.isoformat(timespec="minutes"), **answer}
-    return enforce_schedule(plan, slots, context["servers"], calendar)
+    return _guard(plan, slots, context, calendar, policies)
 
 
 def plan_table(plan: dict[str, Any]) -> pd.DataFrame:

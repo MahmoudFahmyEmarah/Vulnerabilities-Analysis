@@ -166,3 +166,27 @@ def test_guardrail_fixes_unknown_slots_and_foreign_servers(calendar):
     assigned = {s: w["environment"] for w in plan["waves"] for s in w["servers"]}
     assert assigned == {"p1": PROD, "p2": PROD, "d1": DEV}
     assert all(calendar.check(w["environment"], w["start"], w["end"])[0] for w in plan["waves"])
+
+
+def test_guardrail_keeps_the_work_inside_each_window(calendar):
+    policies = settings.load_policies()
+    slots = schedule.offered_slots(calendar, policies, NOW)
+    prod = [f"10.0.9.{i}" for i in range(1, 31)]
+    minutes = {server: 155 for server in prod}     # every kind of work on every server
+    night = next(s for s in slots if s.environment == PROD)
+    proposals = [
+        [{"name": "All at once", "environment": "Production", "slot_id": night.id, "servers": prod,
+          "estimated_minutes": 0}],
+        [{"name": "A", "environment": "Production", "slot_id": night.id, "servers": prod[:10]},
+         {"name": "B", "environment": "Production", "slot_id": night.id, "servers": prod[10:20]}],   # same window twice
+        [],                                                                                          # model forgot all
+    ]
+    for waves in proposals:
+        plan = output_checks.enforce_schedule({"waves": waves}, slots, {DEV: [], PROD: prod}, calendar,
+                                              minutes=minutes, parallel=5)
+        assert sorted(s for w in plan["waves"] for s in w["servers"]) == sorted(prod)
+        assert len({w["slot_id"] for w in plan["waves"]}) == len(plan["waves"])
+        for wave in plan["waves"]:
+            assert wave["estimated_minutes"] == output_checks.work_minutes(wave["servers"], minutes, 5)
+            assert wave["estimated_minutes"] <= wave["window_minutes"]
+            assert calendar.check(PROD, wave["start"], wave["end"])[0]

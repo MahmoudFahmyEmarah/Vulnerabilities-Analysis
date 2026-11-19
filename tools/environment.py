@@ -83,6 +83,39 @@ def save_overrides(path: Path, frame: pd.DataFrame) -> None:
     frame.reindex(columns=OVERRIDE_COLUMNS).to_csv(path, index=False)
 
 
+def mapped_environment(overrides: pd.DataFrame, application: str, servers: list[str]) -> str | None:
+    """The environment the override file gives these servers of one application, if they all agree."""
+    same_app = overrides["Applications"].astype("string").str.strip().eq(application).fillna(False).astype(bool)
+    app_rows = overrides[overrides["Device Name"].isna() & same_app]
+    if not app_rows.empty:
+        return _normalise(app_rows["Environment"].iloc[-1])
+    by_ip = overrides.dropna(subset=["Device Name"])
+    found = dict(zip(by_ip["Device Name"].str.strip(), by_ip["Environment"].map(_normalise)))
+    values = {found.get(server) for server in servers}
+    return values.pop() if len(values) == 1 else None
+
+
+def remap_applications(overrides: pd.DataFrame, members: dict[str, list[str]],
+                       chosen: dict[str, str | None]) -> pd.DataFrame:
+    """Override rows after applications are mapped to an environment on the Settings page.
+
+    ``members``: application -> the servers the page listed for it (no confirmed environment, or
+    already set in the override file). ``chosen``: application -> new environment, or None to clear
+    it, for the applications that changed. The mapping is written one row per listed server, so
+    servers that the AI inventory, the application name or the server list already place keep their
+    environment. An application-wide row of a changed application is replaced by those rows.
+    """
+    servers = {server for app in chosen for server in members.get(app, [])}
+    device = overrides["Device Name"].astype("string").str.strip()
+    applications = overrides["Applications"].astype("string").str.strip()
+    replaced = device.isin(servers).fillna(False).astype(bool) | (device.isna() & applications.isin(list(chosen)).fillna(False).astype(bool))
+    rows = [{"Device Name": server, "Applications": app, "Environment": environment}
+            for app, environment in chosen.items() if environment for server in members.get(app, [])]
+    parts = [frame for frame in (overrides[~replaced].reindex(columns=OVERRIDE_COLUMNS),
+                                 pd.DataFrame(rows, columns=OVERRIDE_COLUMNS)) if not frame.empty]
+    return pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=OVERRIDE_COLUMNS)
+
+
 def resolve_environments(
     devices: pd.DataFrame,
     server_list: pd.DataFrame,

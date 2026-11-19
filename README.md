@@ -105,8 +105,12 @@ are ignored. The workbook itself is not committed (`*.xlsx` is in `.gitignore`).
 
 The model never writes dates. It picks change windows by id from a list the Saudi calendar produces, and
 `guardrails/output_checks.enforce_schedule` re-checks every wave: a production wave that is not in a valid
-window is moved, unknown servers are dropped, forgotten servers are added. Eid dates in the holiday calendar
-are astronomical estimates; correct them with `extra_dates` / `remove_dates` in `guardrails/policies.yaml`.
+window is moved, unknown servers are dropped, forgotten servers are added. The guardrail also works out each
+wave's workload itself (minutes per server, servers in parallel) and moves servers that do not fit into later
+windows, so no wave holds more work than its window. A weekend day that falls inside a holiday break (for
+example the Saturday between Eid and its observed day off) is frozen like the holiday itself. Eid dates in the
+holiday calendar are astronomical estimates; correct them with `extra_dates` / `remove_dates` in
+`guardrails/policies.yaml`.
 
 ## Project layout
 

@@ -117,6 +117,14 @@ def test_offered_production_slots_all_pass_the_rule(calendar):
     assert not any(slot.start.date().isoformat() == "2026-09-23" for slot in slots)
 
 
+def test_weekend_inside_an_eid_break_is_frozen(calendar):
+    # Eid on Friday, the day off moved to Sunday: the holiday table skips the Saturday in between.
+    for day in ("2026-05-30", "2027-03-13"):
+        allowed, reason = calendar.check(PROD, at(calendar, f"{day}T08:00"), at(calendar, f"{day}T20:00"))
+        assert not allowed and "holiday" in reason.lower(), day
+    assert calendar.check(PROD, at(calendar, "2026-11-21T08:00"), at(calendar, "2026-11-21T20:00"))[0]  # normal Saturday
+
+
 def test_weekend_is_friday_saturday(calendar):
     assert calendar.is_weekend(datetime(2026, 11, 20).date()) and calendar.is_weekend(datetime(2026, 11, 21).date())
     assert not calendar.is_weekend(datetime(2026, 11, 22).date())
@@ -180,6 +188,23 @@ def test_inventory_environment_wins_over_report_name_and_server_list():
     assert result.loc["10.9.0.1", ["Environment", "Env Source"]].tolist() == [DEV, environment.SRC_INVENTORY]
     assert result.loc["10.9.0.5", "Env Source"] == environment.SRC_ASSUMED   # inventory lists it without an environment
     assert result.loc["10.9.0.9", "Env Source"] == environment.SRC_ASSUMED
+
+
+def test_mapping_an_application_only_changes_the_servers_it_lists():
+    devices = pd.DataFrame({"Device Name": ["10.8.0.1", "10.8.0.2", "10.8.0.3"], "Applications": ["DataIku"] * 3})
+    inventory_frame = pd.DataFrame({"IP": ["10.8.0.3"], "Environment": [PROD]})
+    no_list = pd.DataFrame(columns=["IP", "Environment"])
+    empty = pd.DataFrame(columns=environment.OVERRIDE_COLUMNS)
+    before = environment.resolve_environments(devices, no_list, empty, PROD, inventory_frame)
+    listed = sorted(before.loc[before["Env Source"] == environment.SRC_ASSUMED, "Device Name"])
+    assert listed == ["10.8.0.1", "10.8.0.2"]
+
+    overrides = environment.remap_applications(empty, {"DataIku": listed}, {"DataIku": DEV})
+    after = environment.resolve_environments(devices, no_list, overrides, PROD, inventory_frame).set_index("Device Name")
+    assert after.loc["10.8.0.3", "Environment"] == PROD          # placed by the inventory: not flipped
+    assert (after.loc[listed, "Environment"] == DEV).all()
+    assert environment.mapped_environment(overrides, "DataIku", listed) == DEV
+    assert environment.remap_applications(overrides, {"DataIku": listed}, {"DataIku": None}).empty   # blank clears
 
 
 def test_missing_inventory_file_switches_the_feature_off(tmp_path):

@@ -108,22 +108,50 @@ def _environment_section(data: state.Data) -> None:
         theme.badges([(f"{source}: {count:,} servers", "red" if source == env.SRC_ASSUMED else "gray")
                       for source, count in counts.items()])
         overrides = env.load_overrides(settings.overrides_file())
-        by_app = dict(zip(overrides["Applications"], overrides["Environment"]))
-        assumed = devices[devices["Env Source"].isin([env.SRC_ASSUMED, env.SRC_OVERRIDE])]
-        table = (assumed.groupby(["Platform", "Applications"])["Device Name"].nunique().reset_index(name="Servers")
-                 .sort_values("Servers", ascending=False))
-        table["Environment"] = table["Applications"].map(by_app)
+        # The mapping applies to exactly the servers counted here: those with no confirmed environment, or
+        # already set in the override file. Servers that the AI inventory, the application name or the
+        # server list place keep their environment, so mapping an application never flips them.
+        editable_sources = [env.SRC_ASSUMED, env.SRC_OVERRIDE]
+        shown_apps = devices.loc[devices["Env Source"].isin(editable_sources), "Applications"].dropna().unique()
+        everywhere = data.devices[data.devices["Applications"].isin(shown_apps)]   # all platforms of those apps
+        editable = everywhere[everywhere["Env Source"].isin(editable_sources)]
+        members = {app: sorted(group["Device Name"].dropna().unique())
+                   for app, group in editable.groupby("Applications")}
+        placed = everywhere[~everywhere["Env Source"].isin(editable_sources)].groupby("Applications")["Device Name"].nunique()
+        table = pd.DataFrame({
+            "Applications": list(members),
+            "Platform": [", ".join(sorted(editable.loc[editable["Applications"] == app, "Platform"].dropna().unique()))
+                         for app in members],
+            "Servers": [len(servers) for servers in members.values()],
+            "Already placed (not changed)": [int(placed.get(app, 0)) for app in members],
+            "Environment": [env.mapped_environment(overrides, app, servers) for app, servers in members.items()],
+        }).sort_values("Servers", ascending=False, ignore_index=True)
         edited = st.data_editor(
-            table, hide_index=True, key="set_env_editor", height=340, disabled=["Platform", "Applications", "Servers"],
-            column_config={"Environment": st.column_config.SelectboxColumn(
-                "Environment", options=[env.PROD, env.DEV], help="Leave blank to keep the safe default (production).")})
+            table, hide_index=True, key="set_env_editor", height=340,
+            disabled=["Applications", "Platform", "Servers", "Already placed (not changed)"],
+            column_config={
+                "Servers": st.column_config.NumberColumn(
+                    "Servers", help="Servers this mapping applies to: no confirmed environment, or set here before."),
+                "Already placed (not changed)": st.column_config.NumberColumn(
+                    help="Servers of this application whose environment comes from the AI inventory, the "
+                         "application name or the server list. Saving a mapping does not change them."),
+                "Environment": st.column_config.SelectboxColumn(
+                    "Environment", options=[env.PROD, env.DEV],
+                    help="Leave blank to keep the safe default (production)."),
+            })
         if st.button("Save environment mapping", type="primary", key="set_env_save"):
-            # Keep per-server rows and mappings of applications that are not in this table; replace the rest.
-            keep = overrides[overrides["Device Name"].notna() | ~overrides["Applications"].isin(edited["Applications"])]
-            chosen = edited.dropna(subset=["Environment"])[["Applications", "Environment"]].assign(**{"Device Name": None})
-            env.save_overrides(settings.overrides_file(), pd.concat([keep, chosen], ignore_index=True))
-            st.success(f"Saved {len(chosen)} application mapping(s) to {settings.overrides_file().name}.")
-            st.rerun()
+            before = dict(zip(table["Applications"], table["Environment"]))
+            chosen = {app: (value if isinstance(value, str) and value else None)
+                      for app, value in zip(edited["Applications"], edited["Environment"])
+                      if (value if isinstance(value, str) and value else None) != before.get(app)}
+            if not chosen:
+                st.info("Nothing changed.")
+            else:
+                env.save_overrides(settings.overrides_file(), env.remap_applications(overrides, members, chosen))
+                servers = sum(len(members[app]) for app in chosen)
+                st.success(f"Saved {len(chosen)} application mapping(s) for {servers} server(s) to "
+                           f"{settings.overrides_file().name}.")
+                st.rerun()
         st.caption("For single servers, add rows with a Device Name to reference/environment_overrides.csv. "
                    "Servers in the AI Platforms Inventory take their environment from it "
                    f"({settings.load_config()['app'].get('ai_inventory', 'not configured')}).")
