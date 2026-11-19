@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 
 import settings
-from tools import data_loader as dl, environment as env
+from tools import data_loader as dl, environment as env, history
 from ui import charts, components, state, theme
 from workflows import export
 
@@ -29,6 +29,26 @@ def _by_application(vulns: pd.DataFrame, mbss: pd.DataFrame, cs: pd.DataFrame, d
     return table.sort_values(sort_by, ascending=False, kind="stable") if sort_by else table
 
 
+def _vulnerability_changes(data: state.Data) -> pd.DataFrame | None:
+    """New / Fixed per application: the loaded vulnerability report against the week before it.
+
+    None when there is no earlier week, or the loaded file is not the newest of its week.
+    """
+    loaded = data.files.get(dl.VULN)
+    if loaded is None:
+        return None
+    weeks = state.weeks()
+    index = next((i for i, week in enumerate(weeks) if dl.VULN in week.files
+                  and week.files[dl.VULN].path.resolve() == loaded.resolve()), None)
+    if index is None:
+        return None
+    previous = next((week for week in weeks[index + 1:] if dl.VULN in week.files), None)
+    if previous is None:
+        return None
+    changes = state.changes(dl.VULN, weeks[index], previous, data)
+    return None if changes is None else history.count_changes(state.scoped(changes))
+
+
 def _export_button(data: state.Data, vulns: pd.DataFrame, mbss: pd.DataFrame, cs: pd.DataFrame,
                    devices: pd.DataFrame, config: dict) -> None:
     """Everything in the sidebar scope as one Excel workbook, built only when the button is clicked."""
@@ -44,6 +64,7 @@ def _export_button(data: state.Data, vulns: pd.DataFrame, mbss: pd.DataFrame, cs
         },
         "due_soon_days": int(config["sla_due_soon_days"]),
         "staff_columns": settings.load_policies()["llm_input"].get("never_send", export.STAFF_COLUMNS),
+        "changes": _vulnerability_changes(data),   # week-over-week New / Fixed columns
     }
     applications = devices["Applications"].nunique()
     left, right = st.columns([2, 1], vertical_alignment="center")
