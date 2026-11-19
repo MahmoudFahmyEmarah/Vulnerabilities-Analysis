@@ -5,6 +5,7 @@ One place to track three security checks for the platform's servers, with AI hel
 - **Vulnerabilities** — open Qualys findings, SLA status, split into OS issues and application issues
 - **MBSS** — failed Minimum Baseline Security Standard controls
 - **CS Controls** — coverage of antivirus, EDR, SIEM, vulnerability scanning, the Qualys agent and PAM
+- **Trends** — what changed since last week (new, fixed, still open, not rescanned) and the weekly trend
 - **Fix Schedule** — a per-application plan: development first, production only outside Saudi working hours
 - **AI recommendations** — step-by-step fixes from a self-hosted model, stored and reused
 
@@ -20,6 +21,12 @@ Python 3.11 or newer is required (pandas 3). On Linux or macOS use `.venv/bin/py
 
 Put the three Excel reports in `latest_Data/` (or upload them on the Settings page). The newest file of each
 kind is used. The first read of a new file takes about half a minute; after that it is cached in `.cache/`.
+
+Keep last week's files next to this week's: the **Trends** page compares two weeks and plots every week present.
+A file's week comes from its data (latest *Last Scan Date Time* or *Evaluation Date*), not from when it was
+copied; the CS report has no date column, so it uses the date the workbook was saved. Because the reports only
+list open findings, a finding that disappears counts as *Fixed* only if its server is still in this week's
+reports; otherwise it is *Not rescanned*. The rules live in `tools/history.py`.
 
 ## Connect the model
 
