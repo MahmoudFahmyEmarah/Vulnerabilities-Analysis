@@ -1,0 +1,11 @@
+.env
+.venv/
+.cache/
+__pycache__/
+.pytest_cache/
+*.xlsx
+latest_Data/
+legacy/*.csv
+memory/store/
+observability/logs/
+reference/environment_overrides.csv
