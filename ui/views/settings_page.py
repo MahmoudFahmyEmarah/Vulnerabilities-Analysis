@@ -55,15 +55,30 @@ def _model_section() -> None:
                    "Rules: guardrails/policies.yaml → llm_input.")
 
 
+_DATE_SOURCE = {
+    "Last Scan Date Time": "the latest Last Scan Date Time in the file",
+    "Evaluation Date": "the latest Evaluation Date in the file",
+    dl.FILE_DATE: "the date the workbook was saved (this report has no date column)",
+}
+
+
 def _files_section(data: state.Data) -> None:
     with st.container(border=True):
-        theme.title("Report files", f"Read from {settings.data_dir()}. The newest file of each kind is used unless you pick another.")
-        found = dl.discover_files(settings.data_dir())
+        theme.title("Report files", f"Read from {settings.data_dir()}. Each file is dated by the data inside it; the "
+                                    "newest of each kind is used unless you pick another. The Trends page compares weeks.")
+        found = dl.describe_files(settings.data_dir())
         columns = st.columns(3)
         for column, kind in zip(columns, (dl.VULN, dl.MBSS, dl.CS)):
-            names = [path.name for path in found[kind]]
-            if names:
-                column.selectbox(dl.KIND_LABEL[kind], names, key=f"file::{kind}")
+            by_name = {info.path.name: info for info in found[kind]}
+            if by_name:
+                column.selectbox(dl.KIND_LABEL[kind], list(by_name), key=f"file::{kind}",
+                                 format_func=lambda name, infos=by_name: f"{name} · {infos[name].report_date:%d %b %Y}")
+                chosen = by_name.get(st.session_state.get(f"file::{kind}")) or found[kind][0]
+                column.caption(f"Report date {chosen.report_date:%d %b %Y}, from {_DATE_SOURCE[chosen.date_source]}."
+                               + (f" {chosen.rows:,} rows." if chosen.rows else "")
+                               + (f" {len(by_name)} files of this kind." if len(by_name) > 1 else ""))
+                for skipped in chosen.skipped_sheets:
+                    column.warning(f"Skipped {skipped}", icon=":material/warning:")
             else:
                 column.warning(f"{dl.KIND_LABEL[kind]}: no file found.")
             if kind in data.errors:

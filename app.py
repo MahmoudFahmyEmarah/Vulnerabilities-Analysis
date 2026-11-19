@@ -9,7 +9,7 @@ import streamlit as st
 import settings
 from agents import base_agent
 from ui import state, theme
-from ui.views import cs_controls, mbss, overview, schedule, settings_page, vulnerabilities
+from ui.views import cs_controls, mbss, overview, schedule, settings_page, trends, vulnerabilities
 
 st.set_page_config(page_title=settings.load_config()["app"]["title"], page_icon=":material/shield:", layout="wide")
 theme.inject()
@@ -20,6 +20,7 @@ page = st.navigation(
         st.Page(vulnerabilities.render, title="Vulnerabilities", icon=":material/bug_report:", url_path="vulnerabilities"),
         st.Page(mbss.render, title="MBSS", icon=":material/rule:", url_path="mbss"),
         st.Page(cs_controls.render, title="CS Controls", icon=":material/verified_user:", url_path="cs-controls"),
+        st.Page(trends.render, title="Trends", icon=":material/trending_up:", url_path="trends"),
         st.Page(schedule.render, title="Fix Schedule", icon=":material/event:", url_path="schedule"),
         st.Page(settings_page.render, title="Settings", icon=":material/settings:", url_path="settings"),
     ],

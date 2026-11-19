@@ -9,7 +9,7 @@ import streamlit as st
 
 import settings
 from memory.knowledge_base import KnowledgeBase
-from tools import classifier, data_loader as dl, environment as env, inventory as inv
+from tools import classifier, data_loader as dl, environment as env, history, inventory as inv
 
 
 @dataclass
@@ -116,18 +116,131 @@ def _file_sig(path: Path) -> tuple:
 
 def load() -> Data:
     """Return the enriched data, reading the Excel files only when something changed."""
-    found = dl.discover_files(settings.data_dir())
-    chosen = []
-    for kind in (dl.VULN, dl.MBSS, dl.CS):
-        picked = st.session_state.get(f"file::{kind}")
-        options = found[kind]
-        path = next((p for p in options if p.name == picked), options[0] if options else None)
-        chosen.append(_signature(path))
-    arguments = (tuple(chosen), _file_sig(settings.overrides_file()), _file_sig(settings.server_list_file()),
-                 _file_sig(settings.CONFIG_FILE) + _file_sig(settings.POLICIES_FILE), len(KnowledgeBase().topic_labels()),
-                 _file_sig(settings.inventory_file()) if settings.inventory_file() else ())
     with st.spinner("Reading the reports. The first read of a new file takes about half a minute."):
+        found = dl.discover_files(settings.data_dir())   # newest report date first
+        chosen = []
+        for kind in (dl.VULN, dl.MBSS, dl.CS):
+            picked = st.session_state.get(f"file::{kind}")
+            options = found[kind]
+            path = next((p for p in options if p.name == picked), options[0] if options else None)
+            chosen.append(_signature(path))
+        arguments = (tuple(chosen), _file_sig(settings.overrides_file()), _file_sig(settings.server_list_file()),
+                     _file_sig(settings.CONFIG_FILE) + _file_sig(settings.POLICIES_FILE), len(KnowledgeBase().topic_labels()),
+                     _file_sig(settings.inventory_file()) if settings.inventory_file() else ())
         return _enrich(*arguments)
+
+
+# ---------------------------------------------------------------------- weeks ----
+@dataclass(frozen=True)
+class Week:
+    """One reporting week (Sunday to Saturday) and the newest file of each kind dated in it."""
+    start: pd.Timestamp
+    files: dict[str, dl.FileInfo]
+
+    @property
+    def label(self) -> str:
+        return f"Week of {self.start:%d %b %Y}"
+
+
+def weeks() -> list[Week]:
+    """Every week with at least one readable report file, newest first. Files are dated by their data."""
+    by_week: dict[pd.Timestamp, dict[str, dl.FileInfo]] = {}
+    for kind, infos in dl.describe_files(settings.data_dir()).items():
+        for info in infos:   # newest first, so the newest file of a kind in a week wins
+            if info.error is None:
+                by_week.setdefault(history.week_start(info.report_date), {}).setdefault(kind, info)
+    return [Week(start, files) for start, files in sorted(by_week.items(), key=lambda item: item[0], reverse=True)]
+
+
+def _context_sig() -> tuple:
+    """Everything besides the report files that changes how a week is enriched."""
+    return (_file_sig(settings.overrides_file()), _file_sig(settings.server_list_file()),
+            _file_sig(settings.CONFIG_FILE) + _file_sig(settings.POLICIES_FILE),
+            _file_sig(settings.inventory_file()) if settings.inventory_file() else ())
+
+
+@st.cache_resource(show_spinner=False, max_entries=2)
+def _server_list(signature: tuple) -> pd.DataFrame:
+    return env.load_server_list(settings.server_list_file())
+
+
+def _with_environment(frame: pd.DataFrame, inventory: pd.DataFrame) -> pd.DataFrame:
+    """Add Environment / Env Source with the same rules as the other pages, for any set of servers."""
+    if frame.empty:
+        return frame.assign(Environment=pd.Series(dtype="object"), **{"Env Source": pd.Series(dtype="object")})
+    resolved = env.resolve_environments(frame[["Device Name", "Applications"]], _server_list(_file_sig(settings.server_list_file())),
+                                        env.load_overrides(settings.overrides_file()),
+                                        settings.load_policies()["production"]["unknown_environment_is"], inventory)
+    return frame.merge(resolved, on="Device Name", how="left")
+
+
+# Columns kept for the comparison tables (the reports' long text columns are not needed there).
+_COMPARE_COLUMNS = {
+    dl.VULN: ["Device Name", "Qualys ID", "Port Number", "Title", "Severity", "Qualys Status", "Applications",
+              "Report Application", "Platform", "Operating System", "Ageing in Days", "SLA Status",
+              "Date First Found", "Last Scan Date Time"],
+    dl.MBSS: ["Device Name", "Qualys Control ID", "Control Description", "Criticality", "Applications",
+              "Report Application", "Platform", "OS Family", "Evaluation Date"],
+}
+
+
+def _prepared(kind: str, path: Path, inventory: pd.DataFrame) -> pd.DataFrame:
+    frame = _apply_inventory(dl.LOADERS[kind](path), inventory)
+    if kind == dl.VULN:
+        config = settings.load_config()
+        frame = dl.add_sla(frame, config["sla_days"], int(config["sla_due_soon_days"]))
+    columns = _COMPARE_COLUMNS.get(kind)
+    return frame[[c for c in columns if c in frame.columns]] if columns else frame
+
+
+def _week_servers(files: tuple[tuple[str, tuple], ...]) -> set[str]:
+    """Every server in one week's reports. The CS report lists all of them; the other two add any it misses."""
+    servers: set[str] = set()
+    for kind, signature in files:
+        servers |= set(dl.load_summary(kind, Path(signature[0]))["Device Name"].dropna())
+    return servers
+
+
+@st.cache_resource(show_spinner=False, max_entries=6)
+def _changes(kind: str, current: tuple, previous: tuple, current_files: tuple, previous_files: tuple,
+             context: tuple, _inventory: pd.DataFrame) -> pd.DataFrame:
+    now, before = _prepared(kind, Path(current[0]), _inventory), _prepared(kind, Path(previous[0]), _inventory)
+    if kind == dl.CS:
+        result = history.cs_changes(now, before)
+    else:
+        compare = history.vulnerability_changes if kind == dl.VULN else history.mbss_changes
+        result = compare(now, before, _week_servers(current_files), _week_servers(previous_files))
+    return _with_environment(result.drop(columns=["Environment", "Env Source"], errors="ignore"), _inventory)
+
+
+def _week_files(week: Week) -> tuple:
+    return tuple((kind, _signature(info.path)) for kind, info in sorted(week.files.items()))
+
+
+def changes(kind: str, current: Week, previous: Week, data: Data) -> pd.DataFrame | None:
+    """Per-finding changes of one report kind between two weeks, for every server (filter with scoped()).
+
+    None when either week has no file of that kind. See tools/history.py for the rules.
+    """
+    if kind not in current.files or kind not in previous.files:
+        return None
+    with st.spinner("Comparing the two weeks…"):
+        return _changes(kind, _signature(current.files[kind].path), _signature(previous.files[kind].path),
+                        _week_files(current), _week_files(previous), _context_sig(), data.inventory)
+
+
+@st.cache_resource(show_spinner=False, max_entries=64)
+def _summary(kind: str, signature: tuple, context: tuple, _inventory: pd.DataFrame) -> pd.DataFrame:
+    return _with_environment(_apply_inventory(dl.load_summary(kind, Path(signature[0])), _inventory), _inventory)
+
+
+def trend(week_list: list[Week], data: Data, by: str | tuple[str, ...] = ()) -> pd.DataFrame:
+    """Weekly totals in the sidebar scope (per ``by`` group): open findings, past SLA, severities, MBSS, CS."""
+    context = _context_sig()
+    with st.spinner("Adding up the weekly reports…"):
+        parts = [(kind, week.start, _scope(_summary(kind, _signature(info.path), context, data.inventory)))
+                 for week in week_list for kind, info in week.files.items()]
+    return history.weekly_trend(parts, by)
 
 
 # -------------------------------------------------------------------- filters ----
@@ -176,6 +289,11 @@ def _scope(frame: pd.DataFrame, applications: bool = True) -> pd.DataFrame:
     if applications and state.get("f_apps"):
         mask &= frame["Applications"].isin(state["f_apps"])
     return frame[mask]
+
+
+def scoped(frame: pd.DataFrame) -> pd.DataFrame:
+    """Apply the sidebar filters to any frame with Device Name, Applications, Platform and Environment."""
+    return _scope(frame)
 
 
 def filtered(data: Data) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:

@@ -140,6 +140,21 @@ def heatmap(data: pd.DataFrame, x: str, y: str, value: str, x_order: list[str], 
     return (cells + text).properties(height=_height(len(y_order), 30) + 20)
 
 
+def trend_lines(data: pd.DataFrame, series: list[str], colors: list[str], value_title: str) -> alt.Chart:
+    """Weekly trend: one line with points per series, x = the "Week" column (Sunday that starts it)."""
+    present = [name for name in series if name in data.columns]
+    long = data.melt(id_vars="Week", value_vars=present, var_name="Measure", value_name="Value").dropna(subset=["Value"])
+    long["Value"] = long["Value"].astype(float)
+    chart = alt.Chart(long).mark_line(point=alt.OverlayMarkDef(size=60, filled=True), strokeWidth=2.5).encode(
+        x=alt.X("Week:T", title=None, axis=alt.Axis(format="%d %b", labelAngle=0, tickCount="week")),
+        y=alt.Y("Value:Q", title=value_title, axis=alt.Axis(format="~s", tickMinStep=1), scale=alt.Scale(zero=True)),
+        color=alt.Color("Measure:N", scale=alt.Scale(domain=present, range=[colors[series.index(n)] for n in present])),
+        tooltip=[alt.Tooltip("Week:T", title="Week of", format="%d %b %Y"), alt.Tooltip("Measure:N"),
+                 alt.Tooltip("Value:Q", title=value_title, format=",")],
+    )
+    return chart.properties(height=260)
+
+
 def gantt(data: pd.DataFrame) -> alt.Chart:
     """Schedule timeline: one bar per wave, coloured by environment."""
     present = [name for name in ENV_ORDER if name in set(data["Environment"])]
