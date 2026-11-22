@@ -1,7 +1,9 @@
 """Settings: model endpoint, report files, environment mapping, classifier, policy, logs."""
 from __future__ import annotations
 
-import os
+from dataclasses import replace
+from datetime import date, datetime, time
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -71,22 +73,31 @@ _DATE_SOURCE = {
     "Last Scan Date Time": "the latest Last Scan Date Time in the file",
     "Evaluation Date": "the latest Evaluation Date in the file",
     dl.FILE_DATE: "the date the workbook was saved (this report has no date column)",
+    dl.USER_DATE: "a date set below",
 }
+_SOURCE_SHORT = {"Last Scan Date Time": "latest scan", "Evaluation Date": "latest evaluation",
+                 dl.FILE_DATE: "workbook saved"}
+_KINDS = (dl.VULN, dl.MBSS, dl.CS)
+_UPLOADED = " (uploaded)"
 
 
 def _files_section(data: state.Data) -> None:
     with st.container(border=True):
         theme.title("Report files", f"Read from {settings.data_dir()}. Each file is dated by the data inside it; the "
                                     "newest of each kind is used unless you pick another. The Trends page compares weeks.")
+        if message := st.session_state.pop("set_files_saved", None):
+            st.success(message)
         found = dl.describe_files(settings.data_dir())
         columns = st.columns(3)
-        for column, kind in zip(columns, (dl.VULN, dl.MBSS, dl.CS)):
+        for column, kind in zip(columns, _KINDS):
             by_name = {info.path.name: info for info in found[kind]}
             if by_name:
                 column.selectbox(dl.KIND_LABEL[kind], list(by_name), key=f"file::{kind}",
                                  format_func=lambda name, infos=by_name: f"{name} · {infos[name].report_date:%d %b %Y}")
                 chosen = by_name.get(st.session_state.get(f"file::{kind}")) or found[kind][0]
-                column.caption(f"Report date {chosen.report_date:%d %b %Y}, from {_DATE_SOURCE[chosen.date_source]}."
+                column.caption(f"Report date {chosen.report_date:%d %b %Y}, from {_DATE_SOURCE[chosen.date_source]}"
+                               + (f" (the file itself gives {chosen.found_date:%d %b %Y})."
+                                  if chosen.date_source == dl.USER_DATE else ".")
                                + (f" {chosen.rows:,} rows." if chosen.rows else "")
                                + (f" {len(by_name)} files of this kind." if len(by_name) > 1 else ""))
                 for skipped in chosen.skipped_sheets:
@@ -95,18 +106,175 @@ def _files_section(data: state.Data) -> None:
                 column.warning(f"{dl.KIND_LABEL[kind]}: no file found.")
             if kind in data.errors:
                 column.error(data.errors[kind])
-        uploads = st.file_uploader("Add report files (.xlsx)", type=["xlsx"], accept_multiple_files=True, key="set_upload")
-        if uploads and st.button("Save uploaded files", key="set_upload_save"):
-            settings.data_dir().mkdir(parents=True, exist_ok=True)
-            saved, skipped = [], []
-            for upload in uploads:
-                target = settings.data_dir() / os.path.basename(upload.name)
-                target.write_bytes(upload.getbuffer())
-                (saved if dl.sniff_kind(target) else skipped).append(upload.name)
-            if saved:
-                st.success(f"Saved: {', '.join(saved)}. Reload the page to use them.")
-            if skipped:
-                st.warning(f"Saved but not recognised as one of the three reports: {', '.join(skipped)}.")
+        _report_weeks(found)
+        _upload_reports(found)
+
+
+def _as_day(value, fallback: date) -> date:
+    """A date from the editor (date, Timestamp or blank)."""
+    try:
+        stamp = pd.Timestamp(value)
+    except (TypeError, ValueError):
+        return fallback
+    return fallback if pd.isna(stamp) else stamp.date()
+
+
+def _moved(info: dl.FileInfo, day: date) -> dl.FileInfo:
+    """``info`` as it will be with report date ``day``: its own date again when ``day`` is that date."""
+    if day == info.found_date.date():
+        return replace(info, report_date=info.found_date, date_source=info.found_source, found=None)
+    if day == info.report_date.date():
+        return info
+    return replace(info, report_date=datetime.combine(day, time()), date_source=dl.USER_DATE,
+                   found=(info.found_date, info.found_source))
+
+
+def _date_table(infos: list[dl.FileInfo], notes: list[str] | None = None) -> pd.DataFrame:
+    table = pd.DataFrame({
+        "Report": [dl.KIND_LABEL.get(info.kind, "—") for info in infos],
+        "File": [info.path.name for info in infos],
+        "Date in the file": [f"{info.found_date:%d %b %Y} ({_SOURCE_SHORT.get(info.found_source, info.found_source)})"
+                             for info in infos],
+        "Report date": [info.report_date.date() for info in infos],
+        "Rows": [info.rows for info in infos],
+    })
+    if notes is not None:
+        table["Note"] = notes
+    return table
+
+
+_DATE_COLUMN = st.column_config.DateColumn(
+    "Report date", format="DD MMM YYYY",
+    help="The week this file counts for. Files dated within three days of each other form one week. "
+         "Set it back to the date in the file to undo.")
+
+
+def _weeks_table(infos: list[dl.FileInfo], uploaded: frozenset[str] = frozenset()) -> pd.DataFrame:
+    """Which file lands in which weekly set: one row per week, one column per report."""
+    rows = []
+    for week in state.week_sets(info for info in infos if info.error is None):
+        row = {"Week": week.label}
+        for kind in _KINDS:
+            info = week.files.get(kind)
+            row[dl.KIND_LABEL[kind]] = "" if info is None else info.path.name + (
+                _UPLOADED if info.path in uploaded else "")
+        rows.append(row)
+    return pd.DataFrame(rows, columns=["Week", *(dl.KIND_LABEL[kind] for kind in _KINDS)])
+
+
+def _alone(infos: list[dl.FileInfo], paths: set) -> list[str]:
+    """Names of the files in ``paths`` that would make up a week on their own while other weeks exist."""
+    weeks = state.week_sets(info for info in infos if info.error is None)
+    if len(weeks) < 2:
+        return []
+    return [week.files[kind].path.name for week in weeks for kind in week.files
+            if len(week.files) == 1 and week.files[kind].path in paths]
+
+
+def _report_weeks(found: dict[str, list[dl.FileInfo]]) -> None:
+    infos = [info for kind in _KINDS for info in found[kind]]
+    if not infos:
+        return
+    st.markdown("**Report weeks**")
+    st.caption("Change *Report date* when a file lands in the wrong week, for example a CS Controls workbook that "
+               "was saved some days after the scans. The weeks below update before you save.")
+    round_ = st.session_state.setdefault("set_dates_round", 0)
+    table = _date_table(infos)
+    edited = st.data_editor(table, key=f"set_dates_{round_}", hide_index=True,
+                            disabled=[column for column in table.columns if column != "Report date"],
+                            column_config={"Report date": _DATE_COLUMN})
+    days = [_as_day(value, info.report_date.date()) for value, info in zip(edited["Report date"], infos)]
+    after = [_moved(info, day) for info, day in zip(infos, days)]
+    changed = [(info, day) for info, day, moved in zip(infos, days, after) if moved.report_date != info.report_date]
+    st.dataframe(_weeks_table(after), hide_index=True)
+    for name in _alone(after, {info.path for info, _ in changed}):
+        st.warning(f"{name} would be a week of its own. If it belongs with other reports, give it their date.",
+                   icon=":material/warning:")
+    if changed and st.button(f"Save {len(changed)} report date(s)", type="primary", key="set_dates_save"):
+        for info, day in changed:
+            dl.set_report_date(info.path, None if day == info.found_date.date() else day)
+        state.use_newest_files({info.kind for info, _ in changed})
+        st.session_state["set_dates_round"] = round_ + 1
+        st.session_state["set_files_saved"] = f"Saved the report date of {len(changed)} file(s)."
+        st.rerun()
+
+
+def _check_upload(path: Path) -> tuple[dl.FileInfo | None, str]:
+    """The upload's report type and dates, or why it cannot be used (then it is not saved)."""
+    kind = dl.sniff_kind(path)
+    if kind is None:
+        return None, "Not one of the three reports: not saved."
+    info = dl.file_info(kind, path)
+    if info.error:
+        return info, f"Cannot be read: {info.error} Not saved."
+    return info, ""
+
+
+def _upload_reports(found: dict[str, list[dl.FileInfo]]) -> None:
+    round_ = st.session_state.setdefault("set_upload_round", 0)
+    uploads = st.file_uploader("Add report files (.xlsx)", type=["xlsx"], accept_multiple_files=True,
+                               key=f"set_upload_{round_}") or []
+    staged: dict[str, tuple[Path, dl.FileInfo | None, str]] = st.session_state.setdefault("set_staged", {})
+    for file_id in [file_id for file_id in staged if file_id not in {upload.file_id for upload in uploads}]:
+        dl.discard_upload(staged.pop(file_id)[0])      # removed from the upload box
+    if not uploads:
+        return
+    with st.spinner("Reading the uploaded files to find their report dates. A large report takes about half a minute."):
+        for upload in uploads:
+            if upload.file_id not in staged:
+                path = dl.stage_upload(upload.name, upload.getbuffer())
+                staged[upload.file_id] = (path, *_check_upload(path))
+    entries = [staged[upload.file_id] for upload in uploads]
+    existing = {info.path.name for kind in _KINDS for info in found[kind]}
+    seen: set[str] = set()
+    notes, usable = [], []
+    for path, info, problem in entries:
+        if not problem and path.name in seen:
+            problem = "Another upload has the same name: not saved."
+        seen.add(path.name)
+        notes.append(problem or ("Replaces the file of the same name." if path.name in existing else ""))
+        usable.append(not problem)
+    infos = [info or dl.FileInfo(path, "", dl.file_date(path), dl.FILE_DATE) for path, info, _ in entries]
+
+    st.markdown("**Check the uploaded files**")
+    table = _date_table(infos, notes)
+    edited = st.data_editor(table, key=f"set_upload_dates_{round_}", hide_index=True,
+                            disabled=[column for column in table.columns if column != "Report date"],
+                            column_config={"Report date": _DATE_COLUMN})
+    days = [_as_day(value, info.report_date.date()) for value, info in zip(edited["Report date"], infos)]
+    ready = [(info, day) for info, day, ok in zip(infos, days, usable) if ok]
+    if not ready:
+        st.warning("None of these files can be saved.")
+        return
+    replaced = {info.path.name for info, _ in ready}
+    after = ([info for kind in _KINDS for info in found[kind] if info.path.name not in replaced]
+             + [_moved(info, day) for info, day in ready])
+    st.caption("Weeks after saving:")
+    st.dataframe(_weeks_table(after, frozenset(info.path for info, _ in ready)), hide_index=True)
+    for name in _alone(after, {info.path for info, _ in ready}):
+        st.warning(f"{name} would be a week of its own. If it belongs with other reports, give it their date.",
+                   icon=":material/warning:")
+    if st.button(f"Save {len(ready)} file(s)", type="primary", key="set_upload_save"):
+        saved, failed = [], []
+        for info, day in ready:
+            try:
+                target = dl.adopt_upload(info.path, settings.data_dir())
+                dl.set_report_date(target, None if day == info.found_date.date() else day)
+                saved.append(target.name)
+            except OSError as error:
+                failed.append(f"{info.path.name} ({error})")
+        for path, _, _ in staged.values():
+            if path.exists():
+                dl.discard_upload(path)
+        staged.clear()
+        if failed:
+            st.error(f"Could not save {', '.join(failed)}. Close the file if it is open elsewhere and try again.")
+            return
+        state.use_newest_files({info.kind for info, _ in ready})
+        st.session_state["set_upload_round"] = round_ + 1
+        st.session_state["set_dates_round"] = st.session_state.get("set_dates_round", 0) + 1
+        st.session_state["set_files_saved"] = f"Saved {', '.join(saved)}. Every page now uses them."
+        st.rerun()
 
 
 def _environment_section(data: state.Data) -> None:

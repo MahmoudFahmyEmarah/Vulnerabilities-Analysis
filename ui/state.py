@@ -120,8 +120,24 @@ def _labels_sig() -> str:
     return hashlib.sha1(repr(labels).encode("utf-8")).hexdigest()
 
 
+_NEXT_PICKS = "_next_file_picks"
+
+
+def use_newest_files(kinds) -> None:
+    """From the next run on, show the newest file of these kinds (after an upload or a changed report date).
+
+    Deleting the selectbox's value would not do: the browser keeps showing the old pick and sends it back.
+    """
+    found = dl.discover_files(settings.data_dir())
+    st.session_state[_NEXT_PICKS] = {kind: found[kind][0].name for kind in kinds if found[kind]}
+
+
 def load() -> Data:
     """Return the enriched data, reading the Excel files only when something changed."""
+    # A file pick the Settings page changed after its selectbox was drawn (see use_newest_files). Set here,
+    # before any selectbox of this run exists, so the browser shows the new pick too.
+    for kind, name in st.session_state.pop(_NEXT_PICKS, {}).items():
+        st.session_state[f"file::{kind}"] = name
     with st.spinner("Reading the reports. The first read of a new file takes about half a minute."):
         found = dl.discover_files(settings.data_dir())   # newest report date first
         chosen = []
@@ -155,8 +171,12 @@ def weeks() -> list[Week]:
     Files are dated by their data, and every file is kept: two weekly reports never collapse into one
     set, whatever weekday their scans ended on.
     """
-    infos = [info for infos in dl.describe_files(settings.data_dir()).values() for info in infos
-             if info.error is None]
+    return week_sets(info for infos in dl.describe_files(settings.data_dir()).values() for info in infos
+                     if info.error is None)
+
+
+def week_sets(infos) -> list[Week]:
+    """Group FileInfos into labelled weekly sets, newest first (also used to preview a change)."""
     out: list[Week] = []
     days: dict[pd.Timestamp, int] = {}
     for start, files in history.group_reports(infos):

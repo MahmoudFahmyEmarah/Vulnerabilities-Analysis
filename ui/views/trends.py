@@ -13,7 +13,7 @@ from tools import data_loader as dl, history
 from ui import charts, components, state, theme
 
 _DATE_WORDING = {"Last Scan Date Time": "latest scan", "Evaluation Date": "latest evaluation",
-                 dl.FILE_DATE: "workbook saved"}
+                 dl.FILE_DATE: "workbook saved", dl.USER_DATE: "week set on Settings"}
 
 _BREAKDOWNS = {
     dl.VULN: {"Application": ("Applications",), "Application and severity": ("Applications", "Severity"),

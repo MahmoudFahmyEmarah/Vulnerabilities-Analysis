@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import threading
 import time
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -151,6 +151,57 @@ def test_simultaneous_cache_writes_do_not_collide(tmp_path):
         thread.join()
     assert not errors and target.read_bytes() == b"same content"
     assert [p.name for p in tmp_path.iterdir()] == ["cache.parquet"]   # no temporary files left behind
+
+
+def _workbook(path: Path, kind: str, **columns) -> Path:
+    data = {column: ["x"] for column in dl.REQUIRED[kind]}
+    if kind == dl.VULN:
+        data.update({"Overall Status": ["Open"], "Ageing in Days": [3], "Severity": ["Low"], "Qualys ID": [1]})
+    data.update({name: [value] for name, value in columns.items()})
+    pd.DataFrame(data).to_excel(path, index=False)
+    return path
+
+
+def test_a_report_date_set_by_the_user_moves_the_file_until_another_file_replaces_it(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "cache_dir", lambda: tmp_path / "cache")
+    (tmp_path / "cache").mkdir()
+    folder = tmp_path / "data"
+    folder.mkdir()
+    _workbook(folder / "Vulnerability 11-16.xlsx", dl.VULN, **{"Last Scan Date Time": "2026-11-15 23:18"})
+    cs = _workbook(folder / "CS Controls 11-16.xlsx", dl.CS)      # dated by when the workbook was saved: today
+    assert len(history.group_reports([i for infos in dl.describe_files(folder).values() for i in infos])) == 2
+
+    dl.set_report_date(cs, date(2026, 11, 15))
+    info = dl.describe_files(folder)[dl.CS][0]
+    assert (info.report_date, info.date_source) == (datetime(2026, 11, 15), dl.USER_DATE)
+    assert info.found_date.date() > date(2026, 11, 15) and info.found_source == dl.FILE_DATE
+    sets = history.group_reports([i for infos in dl.describe_files(folder).values() for i in infos])
+    assert len(sets) == 1 and set(sets[0][1]) == {dl.VULN, dl.CS}
+
+    _workbook(cs, dl.CS, Applications="a different, longer application name")   # same name, other file
+    assert dl.describe_files(folder)[dl.CS][0].date_source == dl.FILE_DATE
+    dl.set_report_date(cs, None)
+    assert dl.chosen_dates(folder) == {}
+
+
+def test_an_upload_is_checked_outside_the_data_folder_and_read_only_once(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "cache_dir", lambda: tmp_path / "cache")
+    (tmp_path / "cache").mkdir()
+    folder = tmp_path / "data"
+    source = _workbook(tmp_path / "source.xlsx", dl.VULN, **{"Last Scan Date Time": "2026-11-15 23:18"})
+    staged = dl.stage_upload("Vulnerability week 46.xlsx", source.read_bytes())
+    assert dl.describe_files(folder)[dl.VULN] == []                 # the pages do not see it yet
+    checked = dl.file_info(dl.VULN, staged)
+    assert checked.report_date == datetime(2026, 11, 15, 23, 18) and checked.error is None
+
+    def read_again(*args, **kwargs):
+        raise AssertionError("the upload was read a second time")
+
+    monkeypatch.setattr(dl, "_combine", read_again)
+    target = dl.adopt_upload(staged, folder)
+    assert dl.file_info(dl.VULN, target).report_date == checked.report_date
+    assert len(dl.load_vulnerabilities(target)) == 1
+    assert not staged.parent.exists() and [p.name for p in folder.iterdir()] == ["Vulnerability week 46.xlsx"]
 
 
 def test_server_addresses_keep_their_last_octet_in_finding_keys():
