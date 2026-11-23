@@ -8,3 +8,4 @@ latest_Data/
 memory/store/
 observability/logs/
 reference/environment_overrides.csv
+dist/

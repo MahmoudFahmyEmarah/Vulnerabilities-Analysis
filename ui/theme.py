@@ -135,6 +135,8 @@ def title(text: str, caption: str = "") -> None:
 
 def badges(items: list[tuple[str, str]]) -> None:
     """items: (text, tone) where tone is '', solid, red, orange or gray."""
+    if not items:   # st.html refuses an empty body (for example before any report is loaded)
+        return
     st.html("".join(f'<span class="sp-badge {esc(tone)}">{esc(text)}</span>' for text, tone in items))
 
 
