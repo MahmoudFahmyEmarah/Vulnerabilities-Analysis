@@ -22,16 +22,17 @@ def selected_row(event: Any) -> int | None:
     return rows[0] if rows else None
 
 
-def capped_table(frame: pd.DataFrame, key: str, download_name: str, **kwargs: Any) -> None:
-    """Show at most ui.max_table_rows rows and offer the complete table as CSV."""
+def capped_table(frame: pd.DataFrame, key: str, download_name: str, **kwargs: Any) -> Any:
+    """Show at most ui.max_table_rows rows and offer the complete table as CSV. Returns the table's event."""
     limit = int(settings.load_config()["ui"]["max_table_rows"])
-    st.dataframe(frame.head(limit), hide_index=True, key=key, **kwargs)
+    event = st.dataframe(frame.head(limit), hide_index=True, key=key, **kwargs)
     left, right = st.columns([3, 1])
     if len(frame) > limit:
         left.caption(f"Showing the first {limit:,} of {len(frame):,} rows. The download has all of them.")
     # The CSV is built only when the button is clicked, so large tables do not slow every rerun.
     right.download_button("Download CSV", lambda: frame.to_csv(index=False).encode("utf-8-sig"),
                           file_name=download_name, mime="text/csv", key=f"{key}-download", width="stretch")
+    return event
 
 
 def render_recommendation(result: dict[str, Any], key: str) -> None:
