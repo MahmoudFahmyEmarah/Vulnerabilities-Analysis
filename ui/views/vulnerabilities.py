@@ -23,7 +23,7 @@ def _page_filters(frame: pd.DataFrame) -> pd.DataFrame:
         severities = one.pills("Severity", [s for s in charts.SEVERITY_ORDER if s in set(frame["Severity"])],
                                selection_mode="multi", key="v_severity")
         statuses = two.pills("SLA status", charts.SLA_ORDER, selection_mode="multi", key="v_sla")
-        topic = three.pills("Owner", [classifier.OS, classifier.APP], key="v_topic")
+        topic = three.pills("Owner", [classifier.OS, classifier.APP], key="v_topic", help=_owner_help())
         search = four.text_input("Search title or CVE", key="v_search", placeholder="e.g. log4j, kernel, CVE-2026")
     mask = pd.Series(True, index=frame.index)
     if severities:
@@ -56,35 +56,87 @@ def _grouped(frame: pd.DataFrame) -> pd.DataFrame:
     return grouped.sort_values(["_rank", "Past SLA", "Servers"], ascending=[True, False, False]).drop(columns="_rank")
 
 
+_TEAM = {classifier.OS: "The operating system team", classifier.APP: "The application team"}
+
+
+def _owner_help() -> str:
+    """How Owner is decided, built from the rules themselves so it cannot go stale."""
+    names = {topic: "; ".join(name for name, rule_topic, _ in classifier.RULES if rule_topic == topic)
+             for topic in (classifier.OS, classifier.APP)}
+    return ("Who fixes it, decided from the finding's title: the rules are tried in order and the first match "
+            f"wins.  \n**OS team:** {names[classifier.OS]}.  \n**Application team:** {names[classifier.APP]}.  \n"
+            "A title that matches no rule goes to the application team. A finding's detail says which rule "
+            "decided it.")
+
+
+def _owner_reason(row: pd.Series) -> str:
+    rule, team = row.get("Topic Rule"), _TEAM.get(row.get("Topic"), _TEAM[classifier.APP])
+    if rule == classifier.UNMATCHED_RULE:
+        return (f"{team} fixes it by default: no rule matches this title. *Settings → OS / application "
+                "classification* can label such titles with the model.")
+    if rule == classifier.LABEL_RULE:
+        return f"{team} fixes it: the model or a person labelled this title (*Settings → OS / application classification*)."
+    return f"{team} fixes it: the title matches the rule **{rule}** (tools/classifier.py)."
+
+
+def _port(value: object) -> str:
+    """The report writes ports like '8,443'."""
+    if value is None or pd.isna(value):
+        return ""
+    text = str(value).replace(",", "").strip()
+    return text.removesuffix(".0")
+
+
+def _finding_text(row: pd.Series) -> None:
+    """The scanner's own description and solution, in full."""
+    def plain(value: object) -> str:
+        return "\n".join(line.strip() for line in strip_html(value).splitlines())
+
+    left, right = st.columns(2)
+    with left:
+        theme.text_block("Description", plain(row.get("Description")))
+    with right:
+        theme.text_block("Solution", plain(row.get("Solution")))
+
+
+def _scan_result(row: pd.Series) -> None:
+    """What the scanner found on one server (the evidence differs per server)."""
+    where = row.get("Device Name")
+    if pd.notna(row.get("Applications")):
+        where = f"{where} ({row['Applications']})"
+    port = _port(row.get("Port Number"))
+    theme.title("Scan result", f"What the scanner found on {where}" + (f", port {port}" if port else ""))
+    text = strip_html(row.get("Results")) or "Not provided in the report."
+    long = len(text) > 1500 or text.count("\n") > 15
+    st.code(text, language=None, wrap_lines=True, height=360 if long else "content")
+
+
 def _detail(frame: pd.DataFrame, title: str) -> None:
-    rows = frame[frame["Title"] == title]
-    first = rows.sort_values("Ageing in Days", ascending=False).iloc[0]
+    rows = frame[frame["Title"] == title].sort_values("Ageing in Days", ascending=False)
+    first = rows.iloc[0]
     with st.container(border=True):
         theme.title("Selected finding")
         st.markdown(f"#### {title}")
         worst = next((level for level in charts.SEVERITY_ORDER if level in set(rows["Severity"])), str(first["Severity"]))
         theme.badges([(worst, "solid"), (str(first["Topic"]), ""),
                       (f"{rows['Device Name'].nunique():,} servers", "gray"),
-                      (f"{int((rows['SLA Status'] == 'Breached').sum()):,} past SLA", "red"),
-                      (f"Classified by: {first['Topic Rule']}", "gray")])
-        left, right = st.columns([1, 1])
-        with left:
-            theme.facts([("Applications", ", ".join(sorted(rows["Applications"].unique())[:8])),
-                         ("Operating systems", ", ".join(sorted(rows["OS Family"].unique()))),
-                         ("CVEs", strip_html(first.get("Related CVEs")).replace("\n", ", ")[:400]),
-                         ("First found", f"{rows['Date First Found'].min():%d %b %Y}" if rows["Date First Found"].notna().any() else ""),
-                         ("Oldest", f"{int(rows['Ageing in Days'].max())} days")])
-            with st.expander("Scanner description"):
-                st.write(strip_html(first.get("Description")) or "Not provided.")
-            with st.expander("Scanner solution"):
-                st.write(strip_html(first.get("Solution")) or "Not provided.")
-            with st.expander("Scan result on the oldest server"):
-                st.code(strip_html(first.get("Results"))[:4000] or "Not provided.", language=None)
-        with right:
-            columns = [c for c in ("Device Name", "Applications", "Server Role", "Environment", "Operating System",
-                                   "Ageing in Days", "SLA Remaining Days", "SLA Status") if c in rows.columns]
-            servers = rows[columns].sort_values("Ageing in Days", ascending=False)
-            st.dataframe(servers, hide_index=True, height=330)
+                      (f"{int((rows['SLA Status'] == 'Breached').sum()):,} past SLA", "red")])
+        st.caption(_owner_reason(first))
+        theme.facts([("Qualys ID", first.get("Qualys ID")),
+                     ("Applications", ", ".join(sorted(rows["Applications"].dropna().unique()))),
+                     ("Operating systems", ", ".join(sorted(rows["OS Family"].dropna().unique()))),
+                     ("CVEs", strip_html(first.get("Related CVEs")).replace("\n", ", ")),
+                     ("First found", f"{rows['Date First Found'].min():%d %b %Y}" if rows["Date First Found"].notna().any() else ""),
+                     ("Oldest", f"{int(rows['Ageing in Days'].max())} days")])
+        _finding_text(first)
+        theme.title("Affected servers", "Tick a server to see what the scanner found on it. "
+                                        "Until then the oldest finding is shown.")
+        columns = [c for c in ("Device Name", "Applications", "Server Role", "Environment", "Operating System",
+                               "Port Number", "Ageing in Days", "SLA Remaining Days", "SLA Status") if c in rows.columns]
+        event = st.dataframe(rows[columns], hide_index=True, height=min(330, 38 + 35 * len(rows)),
+                             on_select="rerun", selection_mode="single-row", key=f"v_servers_of::{title}")
+        picked = components.selected_row(event)
+        _scan_result(rows.iloc[picked] if picked is not None and picked < len(rows) else first)
     components.recommendation_panel(recommend.VULNERABILITY, first.to_dict(), key=title)
 
 
@@ -155,7 +207,8 @@ def render() -> None:
 
 def _tab_findings(frame: pd.DataFrame) -> None:
     grouped = _grouped(frame)
-    st.caption("Select a row to see the affected servers and ask for a fix.")
+    st.caption("Tick the box at the start of a row to read the finding's full description, solution and scan "
+               "result, see the affected servers and ask for a fix.")
     limit = int(settings.load_config()["ui"]["max_table_rows"])
     event = st.dataframe(grouped.head(limit), hide_index=True, on_select="rerun", selection_mode="single-row",
                          key="v_grouped", height=380,
@@ -179,5 +232,19 @@ def _tab_servers(frame: pd.DataFrame) -> None:
 
 def _tab_rows(frame: pd.DataFrame) -> None:
     columns = [c for c in ROW_COLUMNS if c in frame.columns]
-    components.capped_table(frame[columns].sort_values("Ageing in Days", ascending=False), "v_rows",
-                            "open_vulnerabilities.csv", height=420)
+    rows = frame.sort_values("Ageing in Days", ascending=False)
+    st.caption("Tick the box at the start of a row to read that finding's description, solution and scan result "
+               "on that server.")
+    event = components.capped_table(rows[columns], "v_rows", "open_vulnerabilities.csv", height=420,
+                                    on_select="rerun", selection_mode="single-row")
+    picked = components.selected_row(event)
+    if picked is None or picked >= len(rows):
+        return
+    row = rows.iloc[picked]
+    with st.container(border=True):
+        theme.title("Selected row")
+        st.markdown(f"#### {row['Title']}")
+        theme.badges([(str(row["Severity"]), "solid"), (str(row["Topic"]), ""), (str(row["SLA Status"]), "gray")])
+        st.caption(_owner_reason(row))
+        _finding_text(row)
+        _scan_result(row)

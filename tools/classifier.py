@@ -17,6 +17,7 @@ import pandas as pd
 OS = "OS Issue"
 APP = "Application Issue"
 UNMATCHED_RULE = "Unmatched (default)"
+LABEL_RULE = "AI / manual label"   # a stored label (model or person) decided it
 
 # (rule name, topic, pattern) — patterns are case-insensitive.
 RULES: list[tuple[str, str, str]] = [
@@ -75,7 +76,7 @@ def classify_titles(titles: pd.Series, overrides: dict[str, str] | None = None) 
     rule_of: dict[str, str] = {}
     for title in unique:
         if title in overrides:
-            topic_of[title], rule_of[title] = overrides[title], "AI / manual label"
+            topic_of[title], rule_of[title] = overrides[title], LABEL_RULE
         else:
             topic_of[title], rule_of[title] = classify_title(str(title))
     return pd.DataFrame(

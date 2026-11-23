@@ -11,7 +11,8 @@ skipped sheets) and ``.summary-*.parquet`` (per-server counts for the weekly tre
 
 A file's week comes from its data, not from the file system: the latest "Last Scan Date Time"
 (vulnerabilities) or "Evaluation Date" (MBSS). The CS report has no date column, so it uses the
-date the workbook was last saved, or the file's modification time.
+date the workbook was last saved, or the file's modification time. A date set on the Settings page
+(``report_dates.json`` next to the reports) wins over all of these.
 """
 from __future__ import annotations
 
@@ -20,10 +21,13 @@ import json
 import logging
 import os
 import re
+import shutil
 import tempfile
+import threading
+import time
 import zipfile
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, replace
+from datetime import date, datetime
 from pathlib import Path
 from typing import Callable
 
@@ -84,6 +88,8 @@ class SchemaError(ValueError):
 # Column that dates each report (its "week"). The CS report has none.
 REPORT_DATE_COLUMN = {VULN: "Last Scan Date Time", MBSS: "Evaluation Date"}
 FILE_DATE = "file date"
+USER_DATE = "set by user"            # date_source of a file whose week was chosen on the Settings page
+DATES_FILE = "report_dates.json"     # those choices, next to the report files
 
 # What identifies one finding across weeks.
 FINDING_KEY = {VULN: ["Device Name", "Qualys ID", "Port Number"], MBSS: ["Device Name", "Qualys Control ID"],
@@ -100,6 +106,16 @@ class FileInfo:
     rows: int | None = None
     skipped_sheets: tuple[str, ...] = ()
     error: str | None = None
+    found: tuple[datetime, str] | None = None   # the file's own date and source, when the user set another
+
+    @property
+    def found_date(self) -> datetime:
+        """The date found in the file itself, whatever the user chose."""
+        return self.found[0] if self.found else self.report_date
+
+    @property
+    def found_source(self) -> str:
+        return self.found[1] if self.found else self.date_source
 
 
 # ---------------------------------------------------------------- discovery ----
@@ -311,8 +327,13 @@ def file_info(kind: str, path: Path) -> FileInfo:
 
     The first call parses the workbook (and caches it as Parquet, so the dashboard's own read is
     then quick); later calls read the .meta.json sidecar. A file that cannot be read is dated by
-    its file date and carries the error.
+    its file date and carries the error. A date chosen on the Settings page replaces the file's own
+    (which is kept in ``found``).
     """
+    return _with_chosen_date(_found_info(kind, path))
+
+
+def _found_info(kind: str, path: Path) -> FileInfo:
     stem = _cache_stem(kind, path)
     if stem in _INFO:
         return _INFO[stem]
@@ -325,6 +346,126 @@ def file_info(kind: str, path: Path) -> FileInfo:
             info = FileInfo(path, kind, file_date(path), FILE_DATE, error=str(error))
     _INFO[stem] = info
     return info
+
+
+# ------------------------------------------------------- chosen report dates ----
+_DATES_LOCK = threading.Lock()   # every session is a thread of one process: one writer at a time
+
+
+def chosen_dates(folder: Path) -> dict[str, dict]:
+    """Report dates set on the Settings page: {file name: {"report_date": "YYYY-MM-DD", "size": bytes}}."""
+    path = folder / DATES_FILE
+    try:
+        payload = json.loads(path.read_text("utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as error:
+        log.warning("Ignoring %s: %s", path, error)
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def set_report_date(path: Path, day: date | None) -> None:
+    """Put report file ``path`` in the week of ``day``; None goes back to the date found in the file.
+
+    The choice is kept with the file's size, so it moves with a copy of the folder (to CML, say) but
+    is dropped when a different file of the same name replaces it.
+    """
+    with _DATES_LOCK:
+        choices = chosen_dates(path.parent)
+        if day is None:
+            if choices.pop(path.name, None) is None:
+                return
+        else:
+            choices[path.name] = {"report_date": day.isoformat(), "size": path.stat().st_size}
+        _write_atomic(path.parent / DATES_FILE,
+                      lambda target: target.write_text(json.dumps(choices, indent=1, sort_keys=True), "utf-8"))
+
+
+def _with_chosen_date(info: FileInfo) -> FileInfo:
+    choice = chosen_dates(info.path.parent).get(info.path.name)
+    if not isinstance(choice, dict):
+        return info
+    try:
+        if int(choice["size"]) != info.path.stat().st_size:
+            return info                              # another file now has this name
+        day = datetime.fromisoformat(str(choice["report_date"]))
+    except (KeyError, TypeError, ValueError, OSError):
+        return info
+    return replace(info, report_date=day, date_source=USER_DATE, found=(info.report_date, info.date_source))
+
+
+# ------------------------------------------------------------------ uploads ----
+_UPLOAD_PREFIX = "upload-"
+
+
+def stage_upload(name: str, content) -> Path:
+    """Save an uploaded file outside the data folder, so it can be checked before the pages see it.
+
+    Staged files that were neither saved nor discarded are removed after a day.
+    """
+    cache = settings.cache_dir()
+    for old in cache.glob(f"{_UPLOAD_PREFIX}*"):
+        try:
+            if old.is_dir() and time.time() - old.stat().st_mtime > 86400:
+                for staged in old.iterdir():
+                    discard_upload(staged)
+                shutil.rmtree(old, ignore_errors=True)
+        except (OSError, ValueError):
+            pass
+    folder = Path(tempfile.mkdtemp(dir=cache, prefix=_UPLOAD_PREFIX))
+    target = folder / os.path.basename(name)
+    target.write_bytes(content)
+    return target
+
+
+def _is_staged(path: Path) -> bool:
+    return (path.parent.name.startswith(_UPLOAD_PREFIX)
+            and path.parent.parent.resolve() == settings.cache_dir().resolve())
+
+
+def _cache_files(kind: str | None, path: Path) -> list[Path]:
+    """The Parquet cache and sidecars of one source file."""
+    if not kind or not path.exists():
+        return []
+    return list(settings.cache_dir().glob(f"{_cache_stem(kind, path)}.*"))
+
+
+def discard_upload(path: Path) -> None:
+    """Remove a staged upload and its cached read."""
+    if not _is_staged(path):
+        raise ValueError(f"{path} is not a staged upload")
+    for cached in _cache_files(sniff_kind(path) if path.exists() else None, path):
+        cached.unlink(missing_ok=True)
+    shutil.rmtree(path.parent, ignore_errors=True)
+
+
+def adopt_upload(path: Path, folder: Path) -> Path:
+    """Move a checked upload into the data folder, replacing a file of the same name.
+
+    Its cached read moves with it (the file keeps its modification time), so it is not parsed again.
+    """
+    if not _is_staged(path):
+        raise ValueError(f"{path} is not a staged upload")
+    kind = sniff_kind(path)
+    cached = _cache_files(kind, path)
+    old_stem = _cache_stem(kind, path) if kind else ""
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / path.name
+    try:
+        os.replace(path, target)
+    except OSError:
+        shutil.move(path, target)    # another drive: copies, keeping the modification time
+    if kind:
+        new_stem = _cache_stem(kind, target)
+        for source in cached:
+            try:
+                os.replace(source, source.with_name(new_stem + source.name[len(old_stem):]))
+            except OSError:
+                pass                 # the file is simply read again later
+        _INFO.pop(old_stem, None)
+    shutil.rmtree(path.parent, ignore_errors=True)
+    return target
 
 
 # ----------------------------------------------------------- weekly summary ----

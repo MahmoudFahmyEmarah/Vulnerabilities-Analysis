@@ -24,9 +24,16 @@ Python 3.11 or newer is required (pandas 3). On Linux or macOS use `.venv/bin/py
 Put the three Excel reports in `latest_Data/` (or upload them on the Settings page). The newest file of each
 kind is used. The first read of a new file takes about half a minute; after that it is cached in `.cache/`.
 
+Uploading on the Settings page checks each file before the pages see it: it shows the report type, the date
+found in the file and which week the file will join, refuses files that are not one of the three reports, and
+lets you change the week before saving. *Report weeks* on the same page moves a file that is already there to
+another week. Those choices are kept in `latest_Data/report_dates.json` with each file's size, so they travel
+with a copy of the folder and are dropped when a different file of the same name replaces one.
+
 Keep last week's files next to this week's: the **Trends** page compares two weeks and plots every week present.
 A file's week comes from its data (latest *Last Scan Date Time* or *Evaluation Date*), not from when it was
-copied; the CS report has no date column, so it uses the date the workbook was saved. Files dated within three
+copied; the CS report has no date column, so it uses the date the workbook was saved (correct it under
+*Report weeks* on the Settings page when it was saved days after the scans). Files dated within three
 days of each other form one weekly set, and a second file of the same kind starts the next set, so two weekly
 reports are never merged whichever weekday their scans ended on. Because the reports only
 list open findings, a finding that disappears counts as *Fixed* only if its server is still in this week's
@@ -104,6 +111,8 @@ it lists:
 
 `app.ai_inventory_names` renames sheets to application names. By default the development lake (*Advance*) and the
 production lake (*Accelerate*) are both "AI Data Lake", so they are scheduled together: development first.
+*All AI platforms* at the top of the sidebar's Applications filter picks every platform in the inventory at
+once, and can be combined with other applications.
 The Overview page lists inventory servers that appear in none of the reports. Only IP, host name, platform,
 role, cluster, project, environment and status are read from the workbook; licence keys and credentials in it
 are ignored. The workbook itself is not committed (`*.xlsx` is in `.gitignore`).

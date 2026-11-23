@@ -25,7 +25,7 @@ _CSS = f"""
   --red: {RED}; --ink: {INK}; --muted: {MUTED}; --line: #E8E1F3; --card: #FFFFFF;
 }}
 .block-container {{ padding-top: 3.2rem; padding-bottom: 3rem; max-width: 1500px; }}
-.sp-hero, .sp-kpis, .sp-note, .sp-title, .sp-caption, .sp-badge, .sp-facts {{
+.sp-hero, .sp-kpis, .sp-note, .sp-title, .sp-caption, .sp-badge, .sp-facts, .sp-text {{
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }}
 
 .sp-hero {{
@@ -69,6 +69,9 @@ _CSS = f"""
 .sp-badge.gray {{ background: #F3F1F6; color: #56506A; border-color: #E2DEE9; }}
 .sp-facts {{ display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; font-size: 13px; margin: 6px 0 10px; }}
 .sp-facts dt {{ color: var(--muted); }} .sp-facts dd {{ margin: 0; color: var(--ink); overflow-wrap: anywhere; }}
+.sp-text {{ border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px 12px; margin: 4px 0 12px; }}
+.sp-text .body {{ white-space: pre-wrap; font-size: 13.5px; line-height: 1.55; color: var(--ink);
+  overflow-wrap: anywhere; margin-top: 6px; }}
 
 div[data-testid="stVerticalBlockBorderWrapper"] {{ background: var(--card); border-radius: 14px; }}
 section[data-testid="stSidebar"] {{ border-right: 1px solid var(--line); }}
@@ -132,7 +135,15 @@ def title(text: str, caption: str = "") -> None:
 
 def badges(items: list[tuple[str, str]]) -> None:
     """items: (text, tone) where tone is '', solid, red, orange or gray."""
+    if not items:   # st.html refuses an empty body (for example before any report is loaded)
+        return
     st.html("".join(f'<span class="sp-badge {esc(tone)}">{esc(text)}</span>' for text, tone in items))
+
+
+def text_block(heading: str, text: str) -> None:
+    """A heading over a full text from a report, shown as it is (escaped, line breaks kept)."""
+    st.html(f'<div class="sp-text"><div class="sp-title">{esc(heading)}</div>'
+            f'<div class="body">{esc(text) or "Not provided in the report."}</div></div>')
 
 
 def facts(items: list[tuple[str, Any]]) -> None:

@@ -64,7 +64,10 @@ def frames():
 
 
 # ---- gateway ---------------------------------------------------------------------
-def test_saved_env_file_wins_and_blank_falls_back_to_process_environment(monkeypatch):
+def test_saved_env_file_wins_and_blank_falls_back_to_process_environment(monkeypatch, tmp_path):
+    env_file = tmp_path / ".env"   # the file is only read when it exists; a fresh copy of the project has none
+    env_file.touch()
+    monkeypatch.setattr(settings, "ENV_FILE", env_file)
     monkeypatch.setenv("LLM_BASE_URL", "http://from-environment/v1")
     monkeypatch.setattr(base_agent, "dotenv_values", lambda *a, **k: {"LLM_BASE_URL": ""})
     assert base_agent.llm_settings().base_url == "http://from-environment/v1"   # e.g. set on a CML Application

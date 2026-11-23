@@ -50,6 +50,14 @@ def _vulnerability_changes(data: state.Data) -> pd.DataFrame | None:
     return None if changes is None else history.count_changes(state.scoped(changes))
 
 
+def _cs_date(cs_file) -> str:
+    if not cs_file or not cs_file.exists():
+        return "no file"
+    info = dl.file_info(dl.CS, cs_file)
+    how = "week set on the Settings page" if info.date_source == dl.USER_DATE else "workbook saved"
+    return f"{info.report_date:%d %b %Y} ({how})"
+
+
 def _export_button(data: state.Data, vulns: pd.DataFrame, mbss: pd.DataFrame, cs: pd.DataFrame,
                    devices: pd.DataFrame, config: dict) -> None:
     """Everything in the sidebar scope as one Excel workbook, built only when the button is clicked."""
@@ -61,9 +69,9 @@ def _export_button(data: state.Data, vulns: pd.DataFrame, mbss: pd.DataFrame, cs
         "report_dates": {
             "Vulnerability report as of": state.as_of(data.vulns, "Last Scan Date Time"),
             "MBSS report as of": state.as_of(data.mbss, "Evaluation Date"),
-            # Same date as the Settings and Trends pages: when the workbook was saved, not when it was copied.
-            "CS Controls report dated (workbook saved)": (f"{dl.file_info(dl.CS, cs_file).report_date:%d %b %Y}"
-                                                          if cs_file and cs_file.exists() else "no file"),
+            # Same date as the Settings and Trends pages: when the workbook was saved (not when it was
+            # copied), or the week set for it on the Settings page.
+            "CS Controls report dated": _cs_date(cs_file),
         },
         "timezone": timezone,
         "due_soon_days": int(config["sla_due_soon_days"]),
