@@ -25,6 +25,13 @@ class Data:
     inventory: pd.DataFrame = field(default_factory=pd.DataFrame)   # AI Platforms Inventory (reference)
     inventory_ips: frozenset[str] = frozenset()
 
+    @property
+    def ai_platforms(self) -> frozenset[str]:
+        """Application names of the AI platforms (the inventory's platform names)."""
+        if "AI Platform" not in self.inventory:
+            return frozenset()
+        return frozenset(self.inventory["AI Platform"].dropna())
+
 
 def _signature(path: Path | None) -> tuple:
     if path is None or not path.exists():
@@ -307,12 +314,20 @@ def trend(week_list: list[Week], data: Data, by: str | tuple[str, ...] = ()) -> 
 
 # -------------------------------------------------------------------- filters ----
 ALL = "All"
+# An entry of the Applications filter that stands for every AI platform in the inventory.
+AI_GROUP = "All AI platforms"
+
+
+def _share(data: Data) -> None:
+    """What _scope needs from the data, kept where it can read it."""
+    st.session_state["_team_ips"] = data.team_ips
+    st.session_state["_inventory_ips"] = data.inventory_ips
+    st.session_state["_ai_platforms"] = data.ai_platforms
 
 
 def sidebar_filters(data: Data) -> None:
     """Global filters. They apply to every page and keep their value when you switch pages."""
-    st.session_state["_team_ips"] = data.team_ips
-    st.session_state["_inventory_ips"] = data.inventory_ips
+    _share(data)
     with st.sidebar:
         st.markdown("#### Scope")
         platforms = sorted(data.devices["Platform"].dropna().unique())
@@ -328,10 +343,15 @@ def sidebar_filters(data: Data) -> None:
             st.toggle("Only AI platform servers (inventory)", key="f_inventory",
                       help=f"Limits every page to the {len(data.inventory_ips)} servers in the AI Platforms Inventory.")
         scoped = _scope(data.devices, applications=False)
-        options = sorted(scoped["Applications"].dropna().unique())
+        options = sorted(scoped["Applications"].dropna().unique(), key=str.casefold)
+        ai_platforms = [app for app in options if app in data.ai_platforms]
+        if ai_platforms:
+            options.insert(0, AI_GROUP)
         # Drop selections that left the scope (for example after switching platform).
         st.session_state["f_apps"] = [app for app in st.session_state.get("f_apps", []) if app in options]
-        st.multiselect("Applications", options, key="f_apps", placeholder="All applications")
+        st.multiselect("Applications", options, key="f_apps", placeholder="All applications",
+                       help=(f"*{AI_GROUP}* picks every platform in the AI Platforms Inventory: "
+                             f"{', '.join(ai_platforms)}." if ai_platforms else None))
         st.caption(f"{scoped['Device Name'].nunique():,} servers in scope before the application filter.")
 
 
@@ -349,8 +369,16 @@ def _scope(frame: pd.DataFrame, applications: bool = True) -> pd.DataFrame:
     if state.get("f_inventory") and "Device Name" in frame:
         mask &= frame["Device Name"].isin(st.session_state["_inventory_ips"])
     if applications and state.get("f_apps"):
-        mask &= frame["Applications"].isin(state["f_apps"])
+        mask &= frame["Applications"].isin(_picked_apps())
     return frame[mask]
+
+
+def _picked_apps() -> set[str]:
+    """The applications picked in the sidebar, with the AI platforms group replaced by its platforms."""
+    picked = set(st.session_state.get("f_apps", []))
+    if AI_GROUP in picked:
+        picked = (picked - {AI_GROUP}) | set(st.session_state.get("_ai_platforms", ()))
+    return picked
 
 
 def scoped(frame: pd.DataFrame) -> pd.DataFrame:
@@ -360,8 +388,7 @@ def scoped(frame: pd.DataFrame) -> pd.DataFrame:
 
 def filtered(data: Data) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """(vulnerabilities, mbss, cs controls, devices) after the sidebar filters."""
-    st.session_state["_team_ips"] = data.team_ips
-    st.session_state["_inventory_ips"] = data.inventory_ips
+    _share(data)
     return _scope(data.vulns), _scope(data.mbss), _scope(data.cs), _scope(data.devices)
 
 
@@ -375,8 +402,11 @@ def scope_label() -> str:
     if state.get("f_inventory"):
         parts.append("AI inventory servers")
     if state.get("f_apps"):
-        apps = state["f_apps"]
-        parts.append(apps[0] if len(apps) == 1 else f"{len(apps)} applications")
+        others = [app for app in state["f_apps"] if app != AI_GROUP]
+        picked = ["AI platforms"] if AI_GROUP in state["f_apps"] else []
+        if others:
+            picked.append(others[0] if len(others) == 1 else f"{len(others)} applications")
+        parts.append(" + ".join(picked))
     return " · ".join(parts)
 
 

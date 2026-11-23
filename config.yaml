@@ -15,6 +15,7 @@ app:
     Advance: AI Data Lake
     Accelerate: AI Data Lake
     R-studio: R-Studio
+    DataIku: Dataiku
   cache_dir: .cache
 
 llm:

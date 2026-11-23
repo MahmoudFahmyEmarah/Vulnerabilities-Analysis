@@ -111,6 +111,8 @@ it lists:
 
 `app.ai_inventory_names` renames sheets to application names. By default the development lake (*Advance*) and the
 production lake (*Accelerate*) are both "AI Data Lake", so they are scheduled together: development first.
+*All AI platforms* at the top of the sidebar's Applications filter picks every platform in the inventory at
+once, and can be combined with other applications.
 The Overview page lists inventory servers that appear in none of the reports. Only IP, host name, platform,
 role, cluster, project, environment and status are read from the workbook; licence keys and credentials in it
 are ignored. The workbook itself is not committed (`*.xlsx` is in `.gitignore`).
