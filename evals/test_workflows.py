@@ -139,19 +139,26 @@ def test_classifier_agent_labels_titles():
 
 
 # ---- schedule workflow --------------------------------------------------------------
+def _windows(plan, environment=None):
+    return [window for wave in plan["waves"] if environment in (None, wave["environment"]) for window in wave["windows"]]
+
+
 def test_draft_puts_development_first_and_production_outside_working_hours(calendar):
     policies = settings.load_policies()
     context = schedule.build_context("Nifi_N", *frames())
-    plan = schedule.draft_plan(context, calendar, policies, NOW)
-    dev = [w for w in plan["waves"] if w["environment"] == DEV]
-    prod = [w for w in plan["waves"] if w["environment"] == PROD]
-    assert dev and prod and plan["waves"][0]["environment"] == DEV
-    assert max(w["end"] for w in dev) <= min(w["start"] for w in prod)
-    assert prod[0]["name"].startswith("Production canary") and len(prod[0]["servers"]) < 7
-    for wave in prod:
-        assert not calendar.overlaps_working_hours(wave["start"], wave["end"])
-    scheduled = sorted(s for w in plan["waves"] for s in w["servers"])
-    assert scheduled == sorted(context["servers"][DEV] + context["servers"][PROD])
+    for counts, prod_waves in ((None, 1), ({DEV: 1, PROD: 2}, 2)):   # default: one wave per environment
+        plan = schedule.draft_plan(context, calendar, policies, NOW, counts=counts)
+        dev = [w for w in plan["waves"] if w["environment"] == DEV]
+        prod = [w for w in plan["waves"] if w["environment"] == PROD]
+        assert len(dev) == 1 and len(prod) == prod_waves and plan["waves"][0]["environment"] == DEV
+        assert max(w["end"] for w in _windows(plan, DEV)) <= min(w["start"] for w in _windows(plan, PROD))
+        if prod_waves > 1:
+            assert prod[0]["name"].endswith("(canary)") and len(prod[0]["servers"]) < len(prod[1]["servers"])
+        for window in _windows(plan, PROD):
+            assert not calendar.overlaps_working_hours(window["start"], window["end"])
+        scheduled = sorted(s for w in plan["waves"] for s in w["servers"])
+        assert scheduled == sorted(context["servers"][DEV] + context["servers"][PROD])
+    assert schedule.wave_counts(context, policies, "custom", {DEV: 3, PROD: 3}) == {DEV: 2, PROD: 2}   # 4 at most
 
 
 def test_guardrail_moves_production_out_of_working_hours(calendar, monkeypatch):
@@ -161,10 +168,9 @@ def test_guardrail_moves_production_out_of_working_hours(calendar, monkeypatch):
     draft = schedule.draft_plan(context, calendar, policies, NOW)
     plan = schedule.refine_with_ai(context, draft, calendar, policies, NOW)
     assert plan["source"] == "ai" and any("Moved wave" in note for note in plan["guardrail_notes"])
-    for wave in plan["waves"]:
-        if wave["environment"] == PROD:
-            assert wave["slot_id"].startswith("P-")
-            assert calendar.check(PROD, wave["start"], wave["end"])[0]
+    for window in _windows(plan, PROD):
+        assert window["slot_id"].startswith("P-")
+        assert calendar.check(PROD, window["start"], window["end"])[0]
 
 
 def test_guardrail_fixes_unknown_slots_and_foreign_servers(calendar):
@@ -177,10 +183,10 @@ def test_guardrail_fixes_unknown_slots_and_foreign_servers(calendar):
     plan = output_checks.enforce_schedule(proposed, slots, servers, calendar)
     assigned = {s: w["environment"] for w in plan["waves"] for s in w["servers"]}
     assert assigned == {"p1": PROD, "p2": PROD, "d1": DEV}
-    assert all(calendar.check(w["environment"], w["start"], w["end"])[0] for w in plan["waves"])
+    assert all(calendar.check(w["environment"], x["start"], x["end"])[0] for w in plan["waves"] for x in w["windows"])
 
 
-def test_guardrail_keeps_the_work_inside_each_window(calendar):
+def test_guardrail_keeps_the_work_inside_each_window_and_at_most_four_waves(calendar):
     policies = settings.load_policies()
     slots = schedule.offered_slots(calendar, policies, NOW)
     prod = [f"10.0.9.{i}" for i in range(1, 31)]
@@ -192,16 +198,20 @@ def test_guardrail_keeps_the_work_inside_each_window(calendar):
         [{"name": "A", "environment": "Production", "slot_id": night.id, "servers": prod[:10]},
          {"name": "B", "environment": "Production", "slot_id": night.id, "servers": prod[10:20]}],   # same window twice
         [],                                                                                          # model forgot all
+        [{"name": f"W{i}", "environment": "Production", "slot_id": "", "servers": prod[i * 5:i * 5 + 5]}
+         for i in range(6)],                                                                         # too many waves
     ]
     for waves in proposals:
         plan = output_checks.enforce_schedule({"waves": waves}, slots, {DEV: [], PROD: prod}, calendar,
                                               minutes=minutes, parallel=5)
         assert sorted(s for w in plan["waves"] for s in w["servers"]) == sorted(prod)
-        assert len({w["slot_id"] for w in plan["waves"]}) == len(plan["waves"])
-        for wave in plan["waves"]:
-            assert wave["estimated_minutes"] == output_checks.work_minutes(wave["servers"], minutes, 5)
-            assert wave["estimated_minutes"] <= wave["window_minutes"]
-            assert calendar.check(PROD, wave["start"], wave["end"])[0]
+        assert 1 <= len(plan["waves"]) <= output_checks.MAX_WAVES
+        windows = _windows(plan)
+        assert len({w["slot_id"] for w in windows}) == len(windows)
+        for window in windows:
+            assert window["estimated_minutes"] == output_checks.work_minutes(window["servers"], minutes, 5)
+            assert window["estimated_minutes"] <= window["window_minutes"]
+            assert calendar.check(PROD, window["start"], window["end"])[0]
 
 
 def test_guardrail_keeps_production_after_development_and_its_soak(calendar):
@@ -214,10 +224,11 @@ def test_guardrail_keeps_production_after_development_and_its_soak(calendar):
         {"name": "Dev", "environment": "Development", "slot_id": dev_slot.id, "servers": ["d1"]},
         {"name": "Bogus", "environment": "Production", "slot_id": "nope", "servers": ["p2"]}]}
     plan = output_checks.enforce_schedule(proposed, slots, {DEV: ["d1"], PROD: ["p1", "p2"]}, calendar, soak_days=2)
-    dev_end = max(w["end"] for w in plan["waves"] if w["environment"] == DEV)
+    dev_end = max(w["end"] for w in _windows(plan, DEV))
     production = [w for w in plan["waves"] if w["environment"] == PROD]
     assert sorted(s for w in production for s in w["servers"]) == ["p1", "p2"]
-    assert all(w["start"] >= dev_end + timedelta(days=2) for w in production)
+    assert all(w["start"] >= dev_end + timedelta(days=2) for w in _windows(plan, PROD))
+    assert production[1]["start"] >= production[0]["end"]   # one production wave after the other
 
 
 def test_a_hung_endpoint_is_not_retried(monkeypatch):

@@ -90,6 +90,80 @@ def _export_button(data: state.Data, vulns: pd.DataFrame, mbss: pd.DataFrame, cs
         key="overview-export", icon=":material/download:", type="primary", width="stretch")
 
 
+def _donuts(vulns: pd.DataFrame, devices: pd.DataFrame) -> None:
+    """How the open findings and the servers in scope split, at a glance."""
+    def ring(column, title: str, caption: str, frame: pd.DataFrame, by: str, order: list[str], colors: list[str],
+             centre: str, value_title: str, labels: dict[str, str] | None = None) -> None:
+        with column, st.container(border=True):
+            theme.title(title, caption)
+            if frame.empty or by not in frame:
+                st.caption("No data in scope.")
+                return
+            counts = frame[by].value_counts().rename_axis(by).reset_index(name="Count")
+            charts.show(charts.donut(counts, by, "Count", order, colors, centre, value_title, labels))
+
+    one, two, three, four = st.columns(4)
+    ring(one, "By severity", "Open vulnerabilities", vulns, "Severity", charts.SEVERITY_ORDER,
+         charts.SEVERITY_COLORS, "open findings", "Open findings")
+    ring(two, "By SLA status", "Open vulnerabilities", vulns, "SLA Status", charts.SLA_ORDER, charts.SLA_COLORS,
+         "open findings", "Open findings")
+    ring(three, "By owner", "Who fixes the open vulnerabilities", vulns, "Topic", charts.OWNER_ORDER,
+         charts.OWNER_COLORS, "open findings", "Open findings", charts.OWNER_LABELS)
+    ring(four, "By environment", "Servers in scope", devices.drop_duplicates("Device Name"), "Environment",
+         charts.ENV_ORDER, charts.ENV_COLORS, "servers", "Servers")
+
+
+def _more_bars(vulns: pd.DataFrame, mbss: pd.DataFrame, cs: pd.DataFrame) -> None:
+    """Where the open work sits: applications, environments, MBSS criticality and CS controls."""
+    left, right = st.columns([1.5, 1])
+    with left, st.container(border=True):
+        theme.title("Applications with most open vulnerabilities", "Top 10, by severity")
+        if vulns.empty:
+            st.caption("No vulnerability data in scope.")
+        else:
+            top = list(vulns.groupby("Applications").size().nlargest(10).index)
+            counts = (vulns[vulns["Applications"].isin(top)].groupby(["Applications", "Severity"]).size()
+                      .reset_index(name="Findings"))
+            charts.show(charts.stacked_bars(counts, "Applications", "Findings", "Severity", top, charts.SEVERITY_ORDER,
+                                            charts.SEVERITY_COLORS, "Open findings"))
+    with right:
+        with st.container(border=True):
+            theme.title("Open vulnerabilities by environment", "Colour shows SLA status")
+            if vulns.empty:
+                st.caption("No vulnerability data in scope.")
+            else:
+                counts = vulns.groupby(["Environment", "SLA Status"]).size().reset_index(name="Findings")
+                charts.show(charts.stacked_bars(counts, "Environment", "Findings", "SLA Status", charts.ENV_ORDER,
+                                                charts.SLA_ORDER, charts.SLA_COLORS, "Open findings", headroom=0.3))
+        with st.container(border=True):
+            theme.title("MBSS failed checks by criticality")
+            if mbss.empty:
+                st.caption("No MBSS data in scope.")
+            else:
+                counts = mbss["Criticality"].value_counts().rename_axis("Criticality").reset_index(name="Failed checks")
+                charts.show(charts.ordinal_bars(counts, "Criticality", "Failed checks", charts.SEVERITY_ORDER,
+                                                charts.SEVERITY_COLORS, "Failed checks", headroom=0.3))
+
+    left, right = st.columns(2)
+    with left, st.container(border=True):
+        theme.title("Open vulnerabilities by operating system", "Top 8")
+        if vulns.empty or "OS Family" not in vulns:
+            st.caption("No vulnerability data in scope.")
+        else:
+            top = vulns["OS Family"].value_counts().nlargest(8).rename_axis("Operating system").reset_index(name="Findings")
+            charts.show(charts.ranked_bars(top, "Operating system", "Findings", "Open findings"))
+    with right, st.container(border=True):
+        theme.title("CS control gaps", "Servers missing each control, fully or in part")
+        long = dl.cs_long(cs) if not cs.empty else pd.DataFrame()
+        gaps = long[long["State"].isin(["Gap", "Partial"])] if not long.empty else long
+        if gaps.empty:
+            st.caption("No CS control gaps in scope." if not cs.empty else "No CS Controls data in scope.")
+        else:
+            counts = gaps.groupby(["Control", "State"]).size().reset_index(name="Servers")
+            charts.show(charts.stacked_bars(counts, "Control", "Servers", "State", list(dl.CS_CONTROLS),
+                                            charts.CS_ORDER, charts.CS_COLORS, "Servers", headroom=0.25))
+
+
 def _inventory_check(data: state.Data) -> None:
     """Compare the AI Platforms Inventory (the reference) with what the three reports contain."""
     inventory = data.inventory
@@ -180,6 +254,8 @@ def render() -> None:
         theme.note(f"{unconfirmed:,} of {len(devices):,} servers have no confirmed environment and are treated as "
                    "production. Map them on the Settings page to unlock daytime windows for development servers.")
 
+    _donuts(vulns, devices)
+
     left, right = st.columns(2)
     with left, st.container(border=True):
         theme.title("Open vulnerabilities by severity", "Colour shows SLA status")
@@ -197,6 +273,8 @@ def render() -> None:
             charts.show(charts.ranked_bars(top, "Applications", "Past SLA", "Findings past SLA", color=charts.RED))
         else:
             st.caption("Nothing is past SLA in this scope.")
+
+    _more_bars(vulns, mbss, cs)
 
     with st.container(border=True):
         theme.title("By application", "Sorted by findings past SLA. Click a column header to re-sort.")

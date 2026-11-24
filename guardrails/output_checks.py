@@ -1,6 +1,7 @@
 """Checks on what the model returns before an engineer sees it.
 
 * review_recommendation: flags commands that are destructive or need a second look.
+* command_problems: why a command must not be run as it is (Ansible export, Run on servers).
 * enforce_schedule: rebuilds a model-proposed schedule so that it obeys the change-window
   policy no matter what the model wrote. Dates and times always come from calendar slots.
 """
@@ -61,6 +62,21 @@ def review_recommendation(recommendation: dict[str, Any]) -> list[str]:
     return warnings
 
 
+_PLACEHOLDER = re.compile(r"<[A-Za-z][\w.:/=-]*>")
+
+
+def command_problems(command: str) -> list[str]:
+    """Why a command must not be run as it is (empty = fine to run after review).
+
+    Used before a command is turned into an Ansible task or run on a server: a risky pattern is never
+    run from the dashboard, and a placeholder such as <package> must be filled in first.
+    """
+    problems = [meaning for pattern, meaning in _RISKY_COMMANDS if re.search(pattern, command, re.IGNORECASE)]
+    if _PLACEHOLDER.search(command):
+        problems.append("still has a placeholder such as <package> to fill in")
+    return problems
+
+
 def _environment(text: str) -> str:
     return DEV if str(text).strip().lower().startswith(("dev", "non", "test", "pre")) else PROD
 
@@ -91,6 +107,31 @@ def _fit(servers: list[str], minutes: dict[str, int], parallel: int, capacity: i
     return taken, servers[len(taken):]
 
 
+MAX_WAVES = 4   # waves in one plan, all environments together: each wave is one change to approve and run
+
+
+def wave_limits(requested: dict[str, int] | None, servers_by_env: dict[str, list[str]],
+                max_total: int = MAX_WAVES) -> dict[str, int]:
+    """How many waves each environment may have.
+
+    An environment with servers gets at least one wave and at most one per server; together they stay
+    within ``max_total``. ``requested`` None (or an environment missing from it) means as many as allowed.
+    """
+    max_total = max(1, int(max_total))
+    limits: dict[str, int] = {}
+    for environment in (DEV, PROD):
+        count = len(servers_by_env.get(environment, []))
+        wanted = int((requested or {}).get(environment, max_total))
+        limits[environment] = max(1, min(wanted, count, max_total)) if count else 0
+    while sum(limits.values()) > max_total:
+        larger = [e for e in (DEV, PROD) if limits[e] > 1]
+        if not larger:
+            break
+        trim = max(larger, key=lambda e: (limits[e], e == DEV))   # trim the environment with more waves
+        limits[trim] -= 1
+    return limits
+
+
 def enforce_schedule(
     plan: dict[str, Any],
     slots: list[Slot],
@@ -99,37 +140,41 @@ def enforce_schedule(
     minutes: dict[str, int] | None = None,
     parallel: int = 1,
     soak_days: int = 0,
+    waves_per_env: dict[str, int] | None = None,
+    max_waves: int = MAX_WAVES,
 ) -> dict[str, Any]:
     """Make a proposed plan obey the policy. Returns the corrected plan with 'guardrail_notes'.
 
-    ``minutes`` is the estimated work per server (servers without one count DEFAULT_SERVER_MINUTES)
-    and ``parallel`` how many servers are worked on at the same time.
+    A wave is a group of servers changed together. It starts in the window its ``slot_id`` names and,
+    when its servers do not fit, continues in the next free windows of its environment; each wave in
+    the result lists them under "windows". ``minutes`` is the estimated work per server (servers
+    without one count DEFAULT_SERVER_MINUTES) and ``parallel`` how many servers are worked on at once.
 
     Rules applied:
-      1. A wave's time comes from its slot; an unknown slot, a slot another wave already uses, or one
-         too short for even one batch is replaced by the next free valid one.
-      2. A production wave must sit in a production window that passes calendar.check().
-      3. Only servers that belong to the application and to the wave's environment are kept;
-         each server appears once.
-      4. A wave holds only as much work as fits in its window. The estimate is computed here, not
-         taken from the plan; servers that do not fit, and servers the plan forgot, are packed into
-         further free windows.
-      5. Development goes first: no production wave starts before the last development wave has
-         ended plus ``soak_days``. Production waves that do are moved to a later window.
+      1. Only servers that belong to the application and to the wave's environment are kept; each
+         server is in one wave. Servers the plan left out join the last wave of their environment.
+      2. At most ``waves_per_env`` waves per environment (see wave_limits) and ``max_waves`` in all;
+         extra waves are merged into the last one kept.
+      3. A wave's first window comes from its slot; an unknown slot, a slot already used, one too
+         short for even one batch, or one that starts too early is replaced by the next free valid one.
+         A wave without a slot_id simply gets the next free window.
+      4. A production window must pass calendar.check(). Each window holds only as much work as fits
+         in it; the estimate is computed here, not taken from the plan.
+      5. Development goes first: no production window starts before the last development window has
+         ended plus ``soak_days``. Within an environment, each wave starts after the previous one ends.
     """
     notes: list[str] = []
     by_id = {slot.id: slot for slot in slots}
     free = {env: [slot for slot in slots if slot.environment == env] for env in (PROD, DEV)}
     used: set[str] = set()
-    remaining = {env: list(servers) for env, servers in servers_by_env.items()}
     minutes = dict(minutes or {})
     parallel = max(1, int(parallel))
-    waves: list[dict[str, Any]] = []
+    limits = wave_limits(waves_per_env, servers_by_env, max_waves)
 
     def first_batch_fits(servers: list[str], slot: Slot) -> bool:
         return work_minutes(servers[:parallel], minutes, parallel) <= slot.minutes
 
-    def next_free(environment: str, servers: list[str], not_before=None) -> Slot | None:
+    def next_free(environment: str, servers: list[str], not_before) -> Slot | None:
         for slot in free.get(environment, []):
             if slot.id in used or (not_before is not None and slot.start < not_before):
                 continue
@@ -137,103 +182,133 @@ def enforce_schedule(
                 return slot
         return None
 
-    def place(wave: dict[str, Any], environment: str, slot: Slot, servers: list[str]) -> None:
-        used.add(slot.id)
-        waves.append({**wave, "environment": environment, "slot_id": slot.id, "servers": servers,
-                      "estimated_minutes": work_minutes(servers, minutes, parallel),
-                      "start": slot.start, "end": slot.end, "window": slot.label, "window_kind": slot.kind,
-                      "window_minutes": slot.minutes})
+    # 1-2. Which servers go in which wave.
+    proposed: dict[str, list[dict[str, Any]]] = {DEV: [], PROD: []}
+    for wave in plan.get("waves", []):
+        proposed[_environment(wave.get("environment", PROD))].append(wave)
+    assigned: dict[str, list[tuple[dict[str, Any], list[str]]]] = {}
+    for environment in (DEV, PROD):
+        pool = [str(s) for s in servers_by_env.get(environment, [])]
+        members, taken = set(pool), set()
+        kept: list[tuple[dict[str, Any], list[str]]] = []
+        for wave in proposed[environment]:
+            listed = list(dict.fromkeys(str(s) for s in wave.get("servers", [])))
+            servers = [s for s in listed if s in members and s not in taken]
+            if len(listed) > len(servers):
+                notes.append(f"Removed {len(listed) - len(servers)} server(s) from wave '{wave.get('name')}' that are "
+                             f"not {environment.lower()} servers of this application or were already in another wave.")
+            if servers:
+                taken.update(servers)
+                kept.append((wave, servers))
+        limit = limits[environment]
+        if len(kept) > limit:
+            extra, kept = kept[limit:], kept[:limit]
+            for _, servers in extra:
+                kept[-1][1].extend(servers)
+            notes.append(f"Merged {len(extra)} {environment.lower()} wave(s) into '{kept[-1][0].get('name')}': "
+                         f"at most {limit} {environment.lower()} wave(s) are allowed.")
+        elif waves_per_env and kept and len(kept) < limit:
+            notes.append(f"The plan has {len(kept)} {environment.lower()} wave(s); {limit} were asked for.")
+        left = [s for s in pool if s not in taken]
+        if left and kept:
+            kept[-1][1].extend(left)
+            notes.append(f"Added {len(left)} {environment.lower()} server(s) that the plan left out to wave "
+                         f"'{kept[-1][0].get('name')}'.")
+        elif left:
+            kept.append(({"name": environment, "work_items": [], "downtime_expected": False, "pre_checks": [],
+                          "post_checks": [], "rollback": "",
+                          "rationale": "Added by the schedule guardrail: the plan had no wave for these servers."}, left))
+            if proposed[environment]:
+                notes.append(f"Added a {environment.lower()} wave for {len(left)} server(s) that the plan left out.")
+        assigned[environment] = kept
 
-    def schedule_wave(wave: dict[str, Any], environment: str, not_before) -> None:
-        name = wave.get("name")
-        pool = remaining.get(environment, [])
-        servers = [s for s in dict.fromkeys(wave.get("servers", [])) if s in pool]
-        dropped = len(set(wave.get("servers", []))) - len(servers)
-        if dropped:
-            notes.append(f"Removed {dropped} server(s) from wave '{name}' that are not "
-                         f"{environment.lower()} servers of this application or were already scheduled.")
-        if not servers:
-            return
+    # 3-5. Windows for each wave, development first.
+    waves: list[dict[str, Any]] = []
 
-        slot = by_id.get(str(wave.get("slot_id", "")).strip())
-        reason = ""
+    def check_slot(slot_id: str, environment: str, servers: list[str], not_before, too_early: str):
+        slot = by_id.get(slot_id)
         if slot is None:
-            reason = f"unknown window '{wave.get('slot_id')}'"
-        elif slot.id in used:
-            reason = f"window {slot.id} is already used by another wave"
-        elif environment == PROD and slot.environment != PROD:
-            reason = f"window {slot.id} is not a production window"
-        elif not calendar.check(environment, slot.start, slot.end)[0]:
-            reason = calendar.check(environment, slot.start, slot.end)[1]
-        elif not_before is not None and slot.start < not_before:
-            reason = (f"window {slot.id} starts before development has finished and had its "
-                      f"{soak_days} day(s) of soak")
-        elif not first_batch_fits(servers, slot):
-            reason = f"window {slot.id} ({slot.minutes} min) is too short for even one batch of servers"
-        if reason:
-            replacement = next_free(environment, servers, not_before)
-            if replacement is None:
-                notes.append(f"Dropped wave '{name}': {reason} and no valid window is left.")
-                return   # its servers stay unscheduled and are handled with the leftovers
-            notes.append(f"Moved wave '{name}' to {replacement.label}: {reason}.")
-            slot = replacement
+            return None, f"unknown window '{slot_id}'"
+        if slot.id in used:
+            return None, f"window {slot.id} is already used by another wave"
+        if environment == PROD and slot.environment != PROD:
+            return None, f"window {slot.id} is not a production window"
+        allowed, why = calendar.check(environment, slot.start, slot.end)
+        if not allowed:
+            return None, why
+        if not_before is not None and slot.start < not_before:
+            return None, f"window {slot.id} starts {too_early}"
+        if not first_batch_fits(servers, slot):
+            return None, f"window {slot.id} ({slot.minutes} min) is too short for even one batch of servers"
+        return slot, ""
 
-        taken, rest = _fit(servers, minutes, parallel, slot.minutes)
-        if rest:
-            notes.append(f"Wave '{name}' needs about {work_minutes(servers, minutes, parallel)} min but its window "
-                         f"is {slot.minutes} min: {len(rest)} server(s) moved to a later window.")
-        for server in taken:
-            pool.remove(server)
-        place(wave, environment, slot, taken)
-
-    def pack_leftovers(environment: str, not_before) -> None:
-        leftover = remaining.get(environment, [])
-        if not leftover:
-            return
-        queue = list(leftover)
-        ends = [w["end"] for w in waves if w["environment"] == environment] + ([not_before] if not_before else [])
-        after = max(ends, default=None)
-        added = 0
-        while queue:
-            slot = next_free(environment, queue, after) or next_free(environment, queue, not_before)
+    def place(environment: str, not_before):
+        """Place the environment's waves one after the other; returns when the last one ends."""
+        end = None
+        for wave, servers in assigned[environment]:
+            name = wave.get("name") or environment
+            after = end or not_before
+            too_early = ("before the previous wave has finished" if end else
+                         f"before development has finished and had its {soak_days} day(s) of soak")
+            requested = str(wave.get("slot_id") or "").strip()
+            slot, reason = check_slot(requested, environment, servers, after, too_early) if requested else (None, "")
             if slot is None:
-                notes.append(f"{len(queue)} {environment.lower()} server(s) could not be scheduled: no window left "
-                             "in the planning horizon" + (" after development and its soak." if not_before else "."))
-                break
-            taken, queue = _fit(queue, minutes, parallel, slot.minutes)
-            added += 1
-            place({"name": f"{environment} — remaining servers {added}", "work_items": [], "downtime_expected": False,
-                   "pre_checks": [], "post_checks": [], "rollback": "", "rationale": "Added by the schedule guardrail."},
-                  environment, slot, taken)
-            after = slot.end
-        if added:
-            placed = len(leftover) - len(queue)
-            notes.append(f"Added {added} wave(s) for {placed} {environment.lower()} server(s) that the plan left out "
-                         "or that did not fit in their window.")
+                slot = next_free(environment, servers, after)
+                if slot is None:
+                    notes.append(f"Wave '{name}' ({len(servers)} server(s)) could not be scheduled: "
+                                 + (f"{reason}, and " if reason else "") + "no window is left in the planning horizon.")
+                    continue
+                if reason:
+                    notes.append(f"Moved wave '{name}' to {slot.label}: {reason}.")
+            windows: list[dict[str, Any]] = []
+            queue = list(servers)
+            while queue:
+                taken, queue = _fit(queue, minutes, parallel, slot.minutes)
+                used.add(slot.id)
+                windows.append({"slot_id": slot.id, "start": slot.start, "end": slot.end, "window": slot.label,
+                                "window_kind": slot.kind, "window_minutes": slot.minutes, "servers": taken,
+                                "estimated_minutes": work_minutes(taken, minutes, parallel)})
+                if queue:
+                    following = next_free(environment, queue, slot.end)
+                    if following is None:
+                        notes.append(f"{len(queue)} server(s) of wave '{name}' could not be scheduled: no window is "
+                                     "left in the planning horizon.")
+                        break
+                    slot = following
+            first, last = windows[0], windows[-1]
+            waves.append({
+                **{key: value for key, value in wave.items() if key != "window_minutes"},
+                "name": name, "environment": environment, "slot_id": first["slot_id"],
+                "servers": [s for window in windows for s in window["servers"]], "windows": windows,
+                "start": first["start"], "end": last["end"],
+                "window": first["window"] if len(windows) == 1 else
+                f"{len(windows)} windows, {first['start']:%a %d %b} → {last['end']:%a %d %b}",
+                "window_kind": " + ".join(dict.fromkeys(window["window_kind"] for window in windows)),
+                "estimated_minutes": sum(window["estimated_minutes"] for window in windows)})
+            end = last["end"]
+        return end
 
-    # Development first, so its end is known; production only after it and the soak.
-    proposed = [(wave, _environment(wave.get("environment", PROD))) for wave in plan.get("waves", [])]
-    for wave, environment in proposed:
-        if environment == DEV:
-            schedule_wave(wave, DEV, None)
-    pack_leftovers(DEV, None)
-    dev_end = max((w["end"] for w in waves if w["environment"] == DEV), default=None)
+    dev_end = place(DEV, None)
     production_from = dev_end + timedelta(days=max(0, int(soak_days))) if dev_end else None
-    for wave, environment in proposed:
-        if environment == PROD:
-            schedule_wave(wave, PROD, production_from)
-    pack_leftovers(PROD, production_from)
+    place(PROD, production_from)
 
     waves.sort(key=lambda w: w["start"])
-    for wave in waves:  # final assertion: nothing leaves this function outside the policy
-        allowed, why = calendar.check(wave["environment"], wave["start"], wave["end"])
-        if not allowed:
-            raise ValueError(f"Schedule guardrail failed for wave '{wave['name']}': {why}")
-        if wave["estimated_minutes"] > wave["window_minutes"]:
-            raise ValueError(f"Schedule guardrail failed for wave '{wave['name']}': {wave['estimated_minutes']} min "
-                             f"of work does not fit its {wave['window_minutes']}-min window")
-        if wave["environment"] == PROD and production_from and wave["start"] < production_from:
-            raise ValueError(f"Schedule guardrail failed for wave '{wave['name']}': production starts before "
-                             "development has finished and soaked")
+    if len(waves) > max(1, int(max_waves)):  # final assertions: nothing leaves this function outside the policy
+        raise ValueError(f"Schedule guardrail failed: {len(waves)} waves, at most {max_waves} are allowed")
+    seen: set[str] = set()
+    for wave in waves:
+        for window in wave["windows"]:
+            allowed, why = calendar.check(wave["environment"], window["start"], window["end"])
+            if not allowed:
+                raise ValueError(f"Schedule guardrail failed for wave '{wave['name']}': {why}")
+            if window["estimated_minutes"] > window["window_minutes"]:
+                raise ValueError(f"Schedule guardrail failed for wave '{wave['name']}': {window['estimated_minutes']} "
+                                 f"min of work does not fit its {window['window_minutes']}-min window")
+            if wave["environment"] == PROD and production_from and window["start"] < production_from:
+                raise ValueError(f"Schedule guardrail failed for wave '{wave['name']}': production starts before "
+                                 "development has finished and soaked")
+            if window["slot_id"] in seen:
+                raise ValueError(f"Schedule guardrail failed: window {window['slot_id']} is used twice")
+            seen.add(window["slot_id"])
 
     return {**plan, "waves": waves, "guardrail_notes": notes}

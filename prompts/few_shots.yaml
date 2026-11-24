@@ -43,7 +43,7 @@ schedule:
       post_checks: [Service healthy, Re-scan requested]
       rollback: Undo the package transaction and restore the previous library version.
       rationale: Proves the change before production.
-    - name: Production canary
+    - name: Production wave 1 (canary)
       environment: Production
       slot_id: P-20260106-N
       servers: [10.0.1.21]

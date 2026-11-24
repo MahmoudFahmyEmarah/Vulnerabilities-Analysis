@@ -6,7 +6,7 @@ Policy:
 Application context (servers per environment, pending work, SLA pressure):
 {{context}}
 
-Available change windows (choose by slot_id; "minutes" is the window length):
+Available change windows (choose by slot_id the window each wave starts in; "minutes" is the window length):
 {{slots}}
 
 Rule-based draft you may improve (it already obeys the policy):
@@ -16,9 +16,9 @@ Return a JSON object with exactly these keys:
 - "summary": two or three sentences on the approach and why.
 - "risks": list of risks or assumptions an approver should know.
 - "waves": list of waves, each with:
-  - "name": short name, for example "Development", "Production canary", "Production wave 2"
+  - "name": short name, for example "Development", "Production", "Production wave 1 (canary)", "Production wave 2"
   - "environment": "Development" or "Production"
-  - "slot_id": one slot_id from the list above
+  - "slot_id": the slot_id of the window the wave starts in, from the list above
   - "servers": list of server names from the context
   - "work_items": list of what is done in this wave
   - "estimated_minutes": integer, total for the wave

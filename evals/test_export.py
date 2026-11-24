@@ -106,3 +106,24 @@ def test_detail_rows_are_complete_safe_and_without_staff_names(frames, workbook)
     assert first_found["=1+1"] == datetime(2026, 1, 5, 10, 30)
     assert pd.isna(first_found["A & B <c>"])   # blank date stays blank
     assert sheets[export.CS]["Controls with a gap"].tolist() == ["Antivirus, EDR", "SIEM"]
+
+
+def test_email_carries_the_numbers_and_the_workbook_but_no_staff_or_server_names(frames):
+    from email import message_from_bytes, policy
+
+    from workflows import email_report
+
+    blob = export.build_workbook(**frames, scope="Alpha and Beta")
+    message = email_report.build_message(frames["vulns"], frames["mbss"], frames["cs"], frames["devices"],
+                                         to=["team@example.com"], subject="Posture", scope="Alpha and Beta",
+                                         attachment=blob, attachment_name="posture.xlsx",
+                                         generated_at=datetime(2026, 11, 24, 9, 0))
+    parsed = message_from_bytes(message.as_bytes(), policy=policy.default)
+    attachments = list(parsed.iter_attachments())
+    assert [part.get_filename() for part in attachments] == ["posture.xlsx"]
+    assert openpyxl.load_workbook(BytesIO(attachments[0].get_content())).sheetnames == export.SHEETS
+    html = parsed.get_body(("html",)).get_content()
+    for body in (parsed.get_body(("plain",)).get_content(), html):
+        assert "Staff name" not in body and "srv-" not in body
+        assert "Kernel update" in body and "Password length" in body and "Beta" in body
+    assert "A &amp; B &lt;c&gt;" in html

@@ -137,7 +137,7 @@ def _detail(frame: pd.DataFrame, title: str) -> None:
                              on_select="rerun", selection_mode="single-row", key=f"v_servers_of::{title}")
         picked = components.selected_row(event)
         _scan_result(rows.iloc[picked] if picked is not None and picked < len(rows) else first)
-    components.recommendation_panel(recommend.VULNERABILITY, first.to_dict(), key=title)
+    components.recommendation_panel(recommend.VULNERABILITY, first.to_dict(), key=title, servers=rows)
 
 
 def render() -> None:
