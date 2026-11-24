@@ -41,3 +41,13 @@ sla_due_soon_days: 3
 
 ui:
   max_table_rows: 5000   # rows rendered in the browser; downloads always contain everything
+
+email:
+  # Email report page. The SMTP relay and its login come from SMTP_* in .env or the environment
+  # (see .env.example); nothing secret belongs here.
+  subject: "Security posture: {scope} ({date})"   # {scope} and {date} are filled in
+  allowed_recipient_domains: []   # e.g. [example.com]; empty = any address
+  max_applications_detailed: 15   # applications with their own findings section in the body
+  attach_workbook: true           # attach the Excel export for the chosen applications
+  max_attachment_mb: 20           # a larger workbook is left out (most relays refuse big mails)
+  timeout_seconds: 30

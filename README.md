@@ -6,12 +6,19 @@ One place to track three security checks for the platform's servers, with AI hel
 - **MBSS** — failed Minimum Baseline Security Standard controls
 - **CS Controls** — coverage of antivirus, EDR, SIEM, vulnerability scanning, the Qualys agent and PAM
 - **Trends** — what changed since last week (new, fixed, still open, not rescanned) and the weekly trend
-- **Fix Schedule** — a per-application plan: development first, production only outside Saudi working hours
-- **AI recommendations** — step-by-step fixes from a self-hosted model, stored and reused
+- **Fix Schedule** — a per-application plan in 2 to 4 waves: development first, production only outside Saudi
+  working hours
+- **AI recommendations** — step-by-step fixes from a self-hosted model, stored and reused, downloadable as an
+  Ansible playbook
+- **Run on servers** — sign in over SSH for the browser session and run one command on one or many servers
+- **Email report** — email the numbers and main findings of one platform, several applications or all of them,
+  with the Excel export attached
 - **Excel export** — *Export to Excel* on the Overview page: one workbook for the sidebar scope with a summary and
   charts, one row per application, and every open finding, failed MBSS check and server with a CS gap
 
 ## Run it locally
+
+Step by step for another machine or CML, and every setting in one place: [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ```bash
 python -m venv .venv
@@ -74,6 +81,8 @@ Check before going live:
 - **Access.** The app has no login of its own and shows server names and IPs. Keep the application restricted
   to authenticated CML users.
 - **Network.** The application pod must reach the model endpoint and, for step 2, PyPI or your package mirror.
+  *Run on servers* also needs SSH (port 22) from the pod to the servers, and *Email report* needs the SMTP relay.
+  Without them those two pages still load; the playbook and `.eml` downloads work everywhere.
 - **Uploads.** If uploading a report on the Settings page fails with a 403 behind the CML proxy, add the
   environment variables `STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=false` and `STREAMLIT_SERVER_ENABLE_CORS=false`
   to the application, or copy the files into `latest_Data/` instead.
@@ -89,7 +98,9 @@ Check before going live:
 | What | Where |
 |---|---|
 | Data folder, team name, SLA days, model options | `config.yaml` |
-| Working days and hours, production windows, holiday freeze, soak time, canary size | `guardrails/policies.yaml` |
+| Working days and hours, production windows, holiday freeze, soak time, canary size, waves | `guardrails/policies.yaml` |
+| Run on servers: session length, time-outs, servers per run, known_hosts | `guardrails/policies.yaml` → `remote_run` |
+| Email relay (`SMTP_*`), subject, allowed recipient domains | `.env` / environment, `config.yaml` → `email` |
 | Which servers are production or development | Settings page → *Environment mapping* (saved to `reference/environment_overrides.csv`) |
 | AI Platforms Inventory file and platform names | `config.yaml` → `app.ai_inventory`, `app.ai_inventory_names` |
 | OS / application rules | `tools/classifier.py`, checked by `evals/golden_set.jsonl` |
@@ -119,14 +130,71 @@ are ignored. The workbook itself is not committed (`*.xlsx` is in `.gitignore`).
 
 ## How the fix schedule stays safe
 
-The model never writes dates. It picks change windows by id from a list the Saudi calendar produces, and
-`guardrails/output_checks.enforce_schedule` re-checks every wave: a production wave that is not in a valid
-window is moved, unknown servers are dropped, forgotten servers are added. The guardrail also works out each
-wave's workload itself (minutes per server, servers in parallel) and moves servers that do not fit into later
-windows, so no wave holds more work than its window. A weekend day that falls inside a holiday break (for
-example the Saturday between Eid and its observed day off) is frozen like the holiday itself. Eid dates in the
-holiday calendar are astronomical estimates; correct them with `extra_dates` / `remove_dates` in
-`guardrails/policies.yaml`.
+A **wave** is one group of servers changed together, so one change to approve and run. The Fix Schedule page
+offers three choices (`guardrails/policies.yaml` → `scheduling.waves`):
+
+- **One per environment** (the default): one development wave, then one production wave;
+- **Automatic**: production also gets a small first wave (a canary, `canary_fraction` of its servers) when it has
+  more than `automatic_split_production_above` servers;
+- **Custom**: pick the waves per environment, at least one each and **4 at most** in total (`max_total`).
+
+A wave whose servers do not fit in one change window continues in the next free windows of its environment;
+the timeline shows one row per wave and one bar per window, and the CSV has one row per window.
+
+The model never writes dates. It picks the window each wave starts in by id, from a list the Saudi calendar
+produces, and `guardrails/output_checks.enforce_schedule` re-checks every wave: extra waves are merged, a
+production window that is not valid is replaced, unknown servers are dropped and forgotten servers are added to
+the last wave of their environment. The guardrail works out each window's workload itself (minutes per server,
+servers in parallel), so no window holds more work than it has time for, and production starts only after
+development has finished and soaked. A weekend day that falls inside a holiday break (for example the Saturday
+between Eid and its observed day off) is frozen like the holiday itself. Eid dates in the holiday calendar are
+astronomical estimates; correct them with `extra_dates` / `remove_dates` in `guardrails/policies.yaml`.
+
+*Download Ansible inventory* on the Fix Schedule page writes one group per wave (`wave_1`, ...) and per window
+(`wave_1_window_2`, ...), so a finding's playbook can be run one wave at a time.
+
+## Ansible playbooks
+
+Every AI recommendation has *Download Ansible playbook*: a zip with `playbook.yml` (the steps as tasks, the
+verification commands as tasks that change nothing, and rollback tasks that only run with `--tags rollback`)
+and `inventory.ini` (the affected servers in `development` / `production` and `linux` / `windows` groups).
+The play targets `development` unless you pass `-e target=production` (or `-e target=wave_1` with the schedule's
+inventory), works one server at a time when a restart is needed, and stops when a host fails. Commands the
+guardrail flags as risky, and commands that still hold a placeholder such as `<package>`, are not turned into
+tasks; they are listed at the end of the playbook as comments. No credentials are written to either file. The
+dashboard does not run Ansible itself: run the playbook from your Ansible control node.
+
+## Run on servers
+
+The *Run on servers* page runs one command, as one script, on one or many servers over SSH:
+
+1. pick the servers (those in the sidebar scope; *Run on servers…* under an AI recommendation fills in its
+   commands and the affected servers);
+2. sign in with a user name and a password or a pasted private key, plus an optional sudo password;
+3. accept any new host key after comparing its fingerprint (for this session only; a changed key is refused);
+4. run, optionally with sudo, *set -e* and a time-out. Results show the exit code and output per server.
+
+The credentials stay in the browser session's memory only: they are never written to disk, logged or sent to the
+model, and they are forgotten after `remote_run.session_minutes` (30) minutes without use, on *Disconnect*, or
+when the page is closed. Commands the guardrail flags as risky, or that still hold a placeholder, are refused.
+Production servers need a confirmation, with a warning during Saudi working hours. Every run adds a line to
+`observability/logs/remote_runs.jsonl`: who, which servers, the command and the exit codes, never passwords or
+output. Only servers in the reports can be picked unless `remote_run.allow_other_hosts` is true. Windows servers
+need OpenSSH; the command then runs in their default shell without sudo.
+
+## Email report
+
+The *Email report* page emails the posture of one platform, several applications or all of them. The email
+has the headline numbers (servers, open vulnerabilities, past SLA, due soon, severity, OS and application
+issues, MBSS failures, CS gaps, and new / fixed since the previous report), a table per application, and for
+each application its top findings, failed MBSS controls and CS controls with gaps. The Excel export for those
+applications is attached. Server addresses and staff names are never written in the email body.
+
+Sending needs your organisation's SMTP relay in `.env` or in the CML Application's environment variables:
+`SMTP_HOST`, `SMTP_PORT` (587), `SMTP_STARTTLS` (true), `SMTP_SSL` (false), `SMTP_USERNAME`, `SMTP_PASSWORD`
+and `SMTP_FROM` (see `.env.example`). Without them the page can still download the email as an `.eml` file,
+which Outlook opens as a new message ready to send. `email:` in `config.yaml` sets the subject, the allowed
+recipient domains, how many applications get their own section and the attachment size limit.
 
 ## Project layout
 
@@ -136,13 +204,13 @@ cml_app.py          launcher for a CML Application
 config.yaml         application settings
 agents/             model gateway (LangChain) and the remediation, scheduler and classifier agents
 prompts/            system prompts, templates, few-shot examples, changelog
-tools/              report loaders, OS/application rules, environment resolver, Saudi calendar
+tools/              report loaders, OS/application rules, environment resolver, Saudi calendar, SSH runner
 memory/             knowledge base (SQLite): stored recommendations and labels
-workflows/          recommendation flow, fix-schedule flow and the Excel export
+workflows/          recommendation flow, fix-schedule flow, Excel export, email report, Ansible files
 guardrails/         what may be sent to the model, checks on what comes back, change-window policy
 evals/              tests, classifier golden set, mock model endpoint
-observability/      one log line per model call (no prompt text)
-ui/                 theme, charts, shared state, the six pages
+observability/      one log line per model call (no prompt text) and per remote run (no output)
+ui/                 theme, charts, shared state, the pages
 ```
 
 ## Tests

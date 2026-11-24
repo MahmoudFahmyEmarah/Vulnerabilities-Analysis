@@ -2,6 +2,13 @@
 
 Prompts are code. Record every change here with the date and the reason, so a bad change can be rolled back.
 
+## 2026-11-24 — v1.2
+- `system/scheduler.md`, `templates/schedule.md`: the number of waves per environment now comes from the policy
+  summary (the user picks it on the Fix Schedule page: one per environment by default, 4 at most in total). A wave
+  names the window it starts in and may run over several windows, so the model no longer adds waves to make work
+  fit. The canary is only asked for when there are two or more production waves.
+- `few_shots.yaml`: the schedule example's canary wave is named "Production wave 1 (canary)".
+
 ## 2026-11-19 — v1.1
 - `system/scheduler.md`: the soak between development and production is no longer optional. The schedule
   guardrail now enforces it (and the window capacity), so the prompt no longer invites the model to shorten it.

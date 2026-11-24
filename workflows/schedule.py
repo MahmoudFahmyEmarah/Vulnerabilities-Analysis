@@ -1,7 +1,7 @@
 """Fix-schedule workflow for one application.
 
 1. build_context()  - what is pending, on which servers, in which environment
-2. draft_plan()     - rule-based plan that already obeys the Saudi change-window policy
+2. draft_plan()     - rule-based plan in 2 to 4 waves (wave_counts) that already obeys the policy
 3. refine_with_ai() - the scheduling agent improves grouping and sequencing
 4. enforce_schedule (guardrail) - every plan, drafted or refined, is forced back onto
    valid windows, so production is never scheduled inside working hours.
@@ -16,7 +16,7 @@ import pandas as pd
 
 from agents.scheduler import SchedulerAgent
 from guardrails import input_checks
-from guardrails.output_checks import enforce_schedule, strip_images
+from guardrails.output_checks import MAX_WAVES, enforce_schedule, strip_images, wave_limits
 from tools.environment import DEV, PROD, SRC_ASSUMED
 from tools.saudi_calendar import SaudiCalendar, Slot
 
@@ -118,43 +118,75 @@ def _server_minutes(context: dict[str, Any], policies: dict[str, Any]) -> dict[s
             for ip, info in context["per_server"].items()}
 
 
-def _pack(servers: list[str], minutes: dict[str, int], slots: list[Slot], parallel: int):
-    """Fill windows in order with batches of ``parallel`` servers. Returns (waves, unscheduled).
+WAVE_MODES = {
+    "default": "One per environment",
+    "automatic": "Automatic",
+    "custom": "Custom",
+}
 
-    A window too short for the next batch is skipped, so no wave holds more work than its window.
+
+def _wave_rules(policies: dict[str, Any]) -> dict[str, Any]:
+    return policies["scheduling"].get("waves", {}) or {}
+
+
+def max_waves(policies: dict[str, Any]) -> int:
+    return int(_wave_rules(policies).get("max_total", MAX_WAVES))
+
+
+def wave_counts(context: dict[str, Any], policies: dict[str, Any], mode: str = "default",
+                custom: dict[str, int] | None = None) -> dict[str, int]:
+    """Waves per environment for this application.
+
+    default   - waves.default in policies.yaml: one development and one production wave.
+    automatic - one development wave; production gets a small first (canary) wave as well when it has
+                more than waves.automatic_split_production_above servers.
+    custom    - what the user picked. Always at least one wave per environment that has servers and at
+                most waves.max_total together (wave_limits).
     """
-    queue = list(servers)
-    waves: list[tuple[Slot, list[str], int]] = []
-    for slot in slots:
-        if not queue:
-            break
-        chosen: list[str] = []
-        used = 0
-        while queue:
-            batch = queue[:parallel]
-            need = max(minutes[s] for s in batch)
-            if used + need > slot.minutes:
-                break
-            chosen += batch
-            queue = queue[parallel:]
-            used += need
-        if chosen:
-            waves.append((slot, chosen, used))
-    return waves, queue
+    rules = _wave_rules(policies)
+    if mode == "custom" and custom:
+        wanted = {DEV: int(custom.get(DEV, 1)), PROD: int(custom.get(PROD, 1))}
+    elif mode == "automatic":
+        above = int(rules.get("automatic_split_production_above", 10))
+        wanted = {DEV: 1, PROD: 2 if len(context["servers"][PROD]) > above else 1}
+    else:
+        default = rules.get("default", {}) or {}
+        wanted = {DEV: int(default.get(DEV, 1)), PROD: int(default.get(PROD, 1))}
+    return wave_limits(wanted, context["servers"], max_waves(policies))
+
+
+def _split(servers: list[str], count: int, first_share: float | None = None) -> list[list[str]]:
+    """Cut ``servers`` into ``count`` groups in order; ``first_share`` makes the first one smaller (a canary)."""
+    rest = list(servers)
+    if count <= 1 or len(rest) <= 1:
+        return [rest] if rest else []
+    groups: list[list[str]] = []
+    if first_share is not None:
+        first = max(1, min(len(rest) - (count - 1), round(first_share * len(rest))))
+        groups.append(rest[:first])
+        rest, count = rest[first:], count - 1
+    size, extra = divmod(len(rest), count)
+    start = 0
+    for index in range(count):
+        end = start + size + (1 if index < extra else 0)
+        groups.append(rest[start:end])
+        start = end
+    return [group for group in groups if group]
 
 
 def _guard(plan: dict[str, Any], slots: list[Slot], context: dict[str, Any], calendar: SaudiCalendar,
-           policies: dict[str, Any]) -> dict[str, Any]:
-    """Run the schedule guardrail with this application's work estimates."""
+           policies: dict[str, Any], counts: dict[str, int]) -> dict[str, Any]:
+    """Run the schedule guardrail with this application's work estimates and wave counts."""
     rules = policies["scheduling"]
     return enforce_schedule(plan, slots, context["servers"], calendar,
                             minutes=_server_minutes(context, policies),
                             parallel=max(1, int(rules["max_parallel_servers"])),
-                            soak_days=int(rules["soak_days_before_production"]))
+                            soak_days=int(rules["soak_days_before_production"]),
+                            waves_per_env=counts, max_waves=max_waves(policies))
 
 
-def _wave(name: str, environment: str, slot: Slot, servers: list[str], used: int,
-          context: dict[str, Any], rationale: str) -> dict[str, Any]:
+def _wave(name: str, environment: str, servers: list[str], context: dict[str, Any], rationale: str) -> dict[str, Any]:
+    """A drafted wave. It has no window yet: the guardrail gives it the next free ones."""
     bundles = [b for b in BUNDLES if any(b in context["per_server"][s]["bundles"] for s in servers)]
     items = []
     for bundle in bundles:
@@ -162,11 +194,22 @@ def _wave(name: str, environment: str, slot: Slot, servers: list[str], used: int
         findings = sum(context["per_server"][s]["bundles"][bundle] for s in on)
         items.append(f"{BUNDLES[bundle]}: {findings} item(s) on {len(on)} server(s)")
     return {
-        "name": name, "environment": environment, "slot_id": slot.id, "servers": servers, "work_items": items,
-        "estimated_minutes": used, "downtime_expected": "os_patching" in bundles,
+        "name": name, "environment": environment, "slot_id": "", "servers": servers, "work_items": items,
+        "downtime_expected": "os_patching" in bundles,
         "pre_checks": list(_PRE_CHECKS), "post_checks": list(_POST_CHECKS),
         "rollback": " ".join(_ROLLBACK[b] for b in bundles), "rationale": rationale,
     }
+
+
+def _wave_name(environment: str, index: int, total: int) -> tuple[str, str]:
+    if environment == DEV:
+        return ("Development" if total == 1 else f"Development wave {index}",
+                "Development may be changed at any time; working hours keep engineers on hand.")
+    if total == 1:
+        return "Production", "Outside working hours; batches keep part of the cluster in service."
+    if index == 1:
+        return "Production wave 1 (canary)", "A small first wave limits the impact if the change misbehaves."
+    return f"Production wave {index}", "Outside working hours, after the previous wave has gone well."
 
 
 def offered_slots(calendar: SaudiCalendar, policies: dict[str, Any], now: datetime | None = None) -> list[Slot]:
@@ -176,50 +219,26 @@ def offered_slots(calendar: SaudiCalendar, policies: dict[str, Any], now: dateti
 
 
 def draft_plan(context: dict[str, Any], calendar: SaudiCalendar, policies: dict[str, Any],
-               now: datetime | None = None) -> dict[str, Any]:
-    """Rule-based schedule: development first, soak, production canary, then the rest."""
+               now: datetime | None = None, counts: dict[str, int] | None = None) -> dict[str, Any]:
+    """Rule-based schedule: development first, soak, then production, in ``counts`` waves per environment.
+
+    With two or more production waves the first is a small canary. The guardrail then gives every wave
+    the next free windows of its environment; a wave whose servers do not fit in one window runs over
+    several.
+    """
     now = now or calendar.now()
     rules = policies["scheduling"]
-    parallel = max(1, int(rules["max_parallel_servers"]))
     soak = int(rules["soak_days_before_production"])
-    slots = offered_slots(calendar, policies, now)
-    dev_slots = [s for s in slots if s.environment == DEV]
-    prod_slots = [s for s in slots if s.environment == PROD]
-    minutes = _server_minutes(context, policies)
+    counts = counts or wave_counts(context, policies)
     dev, prod = context["servers"][DEV], context["servers"][PROD]
 
     waves: list[dict[str, Any]] = []
-    unscheduled: list[str] = []
-    dev_end = None
-    if dev:
-        packed, left = _pack(dev, minutes, dev_slots, parallel)
-        unscheduled += left
-        for index, (slot, servers, used) in enumerate(packed, 1):
-            name = "Development" if len(packed) == 1 else f"Development wave {index}"
-            waves.append(_wave(name, DEV, slot, servers, used, context,
-                               "Development may be changed at any time; working hours keep engineers on hand."))
-        dev_end = packed[-1][0].end if packed else None
-    if prod:
-        earliest = dev_end + timedelta(days=soak) if dev_end else now
-        eligible = [s for s in prod_slots if s.start >= earliest]
-        canary_count = max(1, round(float(rules["canary_fraction"]) * len(prod))) if len(prod) >= 3 else 0
-        canary, rest = prod[:canary_count], prod[canary_count:]
-        later = eligible
-        if canary:
-            packed, left = _pack(canary, minutes, eligible, parallel)
-            unscheduled += left
-            if packed:   # the rest starts after the canary, in windows the canary did not use
-                canary_end = packed[-1][0].end
-                later = [s for s in eligible if s.start >= canary_end]
-            for index, (slot, servers, used) in enumerate(packed, 1):
-                name = "Production canary" if len(packed) == 1 else f"Production canary {index}"
-                waves.append(_wave(name, PROD, slot, servers, used, context,
-                                   "A small first wave limits the impact if the change misbehaves."))
-        packed, left = _pack(rest, minutes, later, parallel)
-        unscheduled += left
-        for index, (slot, servers, used) in enumerate(packed, 2 if canary else 1):
-            waves.append(_wave(f"Production wave {index}", PROD, slot, servers, used, context,
-                               "Outside working hours; batches keep part of the cluster in service."))
+    for environment, servers in ((DEV, dev), (PROD, prod)):
+        share = float(rules["canary_fraction"]) if environment == PROD else None
+        groups = _split(servers, counts.get(environment, 1), share)
+        for index, group in enumerate(groups, 1):
+            name, rationale = _wave_name(environment, index, len(groups))
+            waves.append(_wave(name, environment, group, context, rationale))
 
     breached = sum(part.get("sla_breached", 0) for part in context["sla"].values())
     risks = []
@@ -229,24 +248,25 @@ def draft_plan(context: dict[str, Any], calendar: SaudiCalendar, policies: dict[
     if breached:
         risks.append(f"{breached:,} finding(s) are already past their SLA.")
     if prod and not dev:
-        risks.append("No development servers are known for this application, so the production canary is the first test.")
-    if unscheduled:
-        risks.append(f"{len(unscheduled)} server(s) did not fit in the {rules['horizon_days']}-day horizon.")
+        risks.append("No development servers are known for this application, so the first production wave is the "
+                     "first test.")
 
-    summary = (f"{len(dev):,} development and {len(prod):,} production server(s). "
+    production_waves = counts.get(PROD, 0) if prod else 0
+    summary = (f"{len(dev):,} development and {len(prod):,} production server(s) in {len(waves)} wave(s). "
                + ("Development goes first during working hours. " if dev else "")
                + (f"Production follows {soak} day(s) later, " if dev and prod else "Production runs " if prod else "")
-               + ("outside Saudi working hours, starting with a canary wave." if prod else ""))
+               + ("outside Saudi working hours" if prod else "")
+               + (", starting with a small canary wave." if production_waves > 1 else "." if prod else ""))
     plan = {"application": context["application"], "source": "rules", "model": "",
             "generated_at": now.isoformat(timespec="minutes"), "summary": summary.strip(), "risks": risks,
             "waves": waves}
-    return _guard(plan, slots, context, calendar, policies)
+    return _guard(plan, offered_slots(calendar, policies, now), context, calendar, policies, counts)
 
 
 # ---------------------------------------------------------------- AI refine ----
-def policy_summary(policies: dict[str, Any]) -> str:
+def policy_summary(policies: dict[str, Any], counts: dict[str, int] | None = None) -> str:
     calendar, production, rules = policies["calendar"], policies["production"], policies["scheduling"]
-    return "\n".join([
+    lines = [
         f"- Time zone {calendar['timezone']}. Working days: {', '.join(calendar['working_days'])}; "
         f"working hours {calendar['working_hours']['start']}–{calendar['working_hours']['end']}.",
         f"- Production windows: every night {production['night_window']['start']}–{production['night_window']['end']}, "
@@ -254,17 +274,31 @@ def policy_summary(policies: dict[str, Any]) -> str:
         "No production change on Saudi public holidays.",
         "- Development: any time.",
         f"- Soak between development and production: {rules['soak_days_before_production']} day(s).",
-        f"- Canary share of production: {rules['canary_fraction']}. Servers worked in parallel: {rules['max_parallel_servers']}.",
+        f"- Servers worked in parallel: {rules['max_parallel_servers']}.",
         f"- Minutes per server by work type: {rules['minutes_per_server']}.",
-    ])
+    ]
+    if counts is not None:
+        lines.append(
+            f"- Waves: exactly {counts.get(DEV, 0)} development and {counts.get(PROD, 0)} production wave(s), "
+            f"{max_waves(policies)} at most in total. A wave may need more than one window: give the slot_id of the "
+            "window it starts in and the calendar continues it in the next free windows of its environment. With two "
+            f"or more production waves the first is a small canary (about {rules['canary_fraction']} of the "
+            "production servers).")
+    return "\n".join(lines)
+
+
+def _window_ids(plan: dict[str, Any]) -> set[str]:
+    return {window["slot_id"] for wave in plan["waves"] for window in wave.get("windows", [])}
 
 
 def refine_with_ai(context: dict[str, Any], draft: dict[str, Any], calendar: SaudiCalendar,
-                   policies: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
+                   policies: dict[str, Any], now: datetime | None = None,
+                   counts: dict[str, int] | None = None) -> dict[str, Any]:
     """Ask the scheduling agent to improve the draft, then force the answer back onto the policy."""
     now = now or calendar.now()
+    counts = counts or wave_counts(context, policies)
     slots = offered_slots(calendar, policies, now)
-    draft_ids = {wave["slot_id"] for wave in draft["waves"]}
+    draft_ids = _window_ids(draft)
     shown = ([s for s in slots if s.environment == DEV][:6] + [s for s in slots if s.environment == PROD][:16]
              + [s for s in slots if s.id in draft_ids])
     shown = sorted({s.id: s for s in shown}.values(), key=lambda s: s.start)
@@ -273,8 +307,9 @@ def refine_with_ai(context: dict[str, Any], draft: dict[str, Any], calendar: Sau
     model_context = {key: value for key, value in context.items() if key != "per_server"}
     if len(context["per_server"]) <= limit:
         model_context["work_per_server"] = {ip: info["bundles"] for ip, info in context["per_server"].items()}
-    model_draft = [{key: wave[key] for key in ("name", "environment", "slot_id", "servers", "work_items",
-                                               "estimated_minutes")} for wave in draft["waves"]]
+    model_draft = [{**{key: wave[key] for key in ("name", "environment", "slot_id", "servers", "work_items",
+                                                  "estimated_minutes")},
+                    "windows_used": len(wave.get("windows", []))} for wave in draft["waves"]]
 
     aliases: dict[str, str] = {}
     mask = bool(policies.get("llm_input", {}).get("mask_ip_addresses"))
@@ -283,26 +318,38 @@ def refine_with_ai(context: dict[str, Any], draft: dict[str, Any], calendar: Sau
         model_draft = json.loads(input_checks.mask_ips(json.dumps(model_draft, default=str), aliases))
 
     answer, details = SchedulerAgent().plan(model_context, [s.to_dict() for s in shown], model_draft,
-                                            policy_summary(policies))
+                                            policy_summary(policies, counts))
     if mask:
         answer = json.loads(input_checks.unmask_ips(json.dumps(answer, ensure_ascii=False), aliases))
     answer = strip_images(answer)
 
     plan = {"application": context["application"], "source": "ai", "model": details["model"],
             "generated_at": now.isoformat(timespec="minutes"), **answer}
-    return _guard(plan, slots, context, calendar, policies)
+    return _guard(plan, slots, context, calendar, policies, counts)
 
 
 def plan_table(plan: dict[str, Any]) -> pd.DataFrame:
-    """Flat table of the plan for display and CSV export."""
+    """One row per change window of every wave, for the timeline and the CSV export."""
     rows = []
     for wave in plan["waves"]:
-        rows.append({
-            "Wave": wave["name"], "Environment": wave["environment"], "Start": wave["start"], "End": wave["end"],
-            "Window": wave["window_kind"], "Servers": len(wave["servers"]),
-            "Estimated minutes": wave.get("estimated_minutes", 0),
-            "Downtime": "Yes" if wave.get("downtime_expected") else "No",
-            "Work": "; ".join(wave.get("work_items", [])), "Server list": ", ".join(wave["servers"]),
-        })
+        windows = wave.get("windows", [])
+        for number, window in enumerate(windows, 1):
+            rows.append({
+                "Wave": wave["name"], "Environment": wave["environment"],
+                "Window": f"{number} of {len(windows)}", "Start": window["start"], "End": window["end"],
+                "Window type": window["window_kind"], "Servers": len(window["servers"]),
+                "Estimated minutes": window["estimated_minutes"], "Window minutes": window["window_minutes"],
+                "Downtime": "Yes" if wave.get("downtime_expected") else "No",
+                "Work": "; ".join(wave.get("work_items", [])), "Server list": ", ".join(window["servers"]),
+            })
     return pd.DataFrame(rows)
 
+
+def wave_table(plan: dict[str, Any]) -> pd.DataFrame:
+    """One row per wave."""
+    return pd.DataFrame([{
+        "Wave": wave["name"], "Environment": wave["environment"], "Windows": len(wave.get("windows", [])),
+        "Starts": wave["start"], "Ends": wave["end"], "Servers": len(wave["servers"]),
+        "Estimated hours": round(wave.get("estimated_minutes", 0) / 60, 1),
+        "Downtime": "Yes" if wave.get("downtime_expected") else "No", "Work": "; ".join(wave.get("work_items", [])),
+    } for wave in plan["waves"]])

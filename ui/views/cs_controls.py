@@ -50,7 +50,7 @@ def _control_detail(cs: pd.DataFrame, long: pd.DataFrame, vulns: pd.DataFrame) -
         "Operating Systems": os_mix or "not known from the vulnerability report",
         "Servers Affected": str(rows["Device Name"].nunique()),
     }
-    components.recommendation_panel(recommend.CS_CONTROL, finding, key=control)
+    components.recommendation_panel(recommend.CS_CONTROL, finding, key=control, servers=rows)
 
 
 def render() -> None:
@@ -89,6 +89,22 @@ def render() -> None:
         counts = long.groupby(["Control", "State"]).size().reset_index(name="Servers")
         charts.show(charts.stacked_bars(counts, "Control", "Servers", "State", list(dl.CS_CONTROLS), charts.CS_ORDER,
                                         charts.CS_COLORS, "Share of servers", normalize=True))
+    one, two = st.columns([1, 1.4])
+    with one, st.container(border=True):
+        theme.title("Controls missing per server", "Servers by how many controls have a gap or are partial")
+        labels = ["None"] + [f"{n} control{'s' if n > 1 else ''}" for n in range(1, len(dl.CS_CONTROLS) + 1)]
+        missing = cs["Gaps"].clip(0, len(dl.CS_CONTROLS)).astype(int).map(dict(enumerate(labels)))
+        per_server = missing.value_counts().reindex(labels, fill_value=0).rename_axis("Missing").reset_index(name="Servers")
+        charts.show(charts.ranked_bars(per_server, "Missing", "Servers", "Servers", order=labels, headroom=0.3))
+    with two, st.container(border=True):
+        theme.title("Coverage by environment", "Implemented / servers where the control applies")
+        by_env = _coverage(long, ["Environment", "Control"]) if "Environment" in long else pd.DataFrame()
+        if by_env.empty:
+            st.caption("No environment information in scope.")
+        else:
+            environments = [name for name in charts.ENV_ORDER if name in set(by_env["Environment"])]
+            charts.show(charts.heatmap(by_env, "Control", "Environment", "coverage", list(dl.CS_CONTROLS),
+                                       environments, "Coverage"))
     with st.container(border=True):
         theme.title("Coverage by application", "The 12 applications with most gaps. Blank = control not in scope.")
         by_app = _coverage(long, ["Applications", "Control"])

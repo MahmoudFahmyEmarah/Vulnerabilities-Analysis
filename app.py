@@ -9,23 +9,24 @@ import streamlit as st
 import settings
 from agents import base_agent
 from ui import state, theme
-from ui.views import cs_controls, mbss, overview, schedule, settings_page, trends, vulnerabilities
+from ui.views import cs_controls, email_report, mbss, overview, remote, schedule, settings_page, trends, vulnerabilities
 
 st.set_page_config(page_title=settings.load_config()["app"]["title"], page_icon=":material/shield:", layout="wide")
 theme.inject()
 
-page = st.navigation(
-    [
-        st.Page(overview.render, title="Overview", icon=":material/dashboard:", url_path="overview", default=True),
-        st.Page(vulnerabilities.render, title="Vulnerabilities", icon=":material/bug_report:", url_path="vulnerabilities"),
-        st.Page(mbss.render, title="MBSS", icon=":material/rule:", url_path="mbss"),
-        st.Page(cs_controls.render, title="CS Controls", icon=":material/verified_user:", url_path="cs-controls"),
-        st.Page(trends.render, title="Trends", icon=":material/trending_up:", url_path="trends"),
-        st.Page(schedule.render, title="Fix Schedule", icon=":material/event:", url_path="schedule"),
-        st.Page(settings_page.render, title="Settings", icon=":material/settings:", url_path="settings"),
-    ],
-    position="top",
-)
+state.PAGES.update({
+    "overview": st.Page(overview.render, title="Overview", icon=":material/dashboard:", url_path="overview", default=True),
+    "vulnerabilities": st.Page(vulnerabilities.render, title="Vulnerabilities", icon=":material/bug_report:",
+                               url_path="vulnerabilities"),
+    "mbss": st.Page(mbss.render, title="MBSS", icon=":material/rule:", url_path="mbss"),
+    "cs": st.Page(cs_controls.render, title="CS Controls", icon=":material/verified_user:", url_path="cs-controls"),
+    "trends": st.Page(trends.render, title="Trends", icon=":material/trending_up:", url_path="trends"),
+    "schedule": st.Page(schedule.render, title="Fix Schedule", icon=":material/event:", url_path="schedule"),
+    "remote": st.Page(remote.render, title="Run on servers", icon=":material/terminal:", url_path="run"),
+    "email": st.Page(email_report.render, title="Email report", icon=":material/mail:", url_path="email"),
+    "settings": st.Page(settings_page.render, title="Settings", icon=":material/settings:", url_path="settings"),
+})
+page = st.navigation(list(state.PAGES.values()), position="top")
 
 data = state.load()
 state.sidebar_filters(data)

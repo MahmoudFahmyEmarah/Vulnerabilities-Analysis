@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import streamlit as st
@@ -316,6 +317,7 @@ def trend(week_list: list[Week], data: Data, by: str | tuple[str, ...] = ()) -> 
 ALL = "All"
 # An entry of the Applications filter that stands for every AI platform in the inventory.
 AI_GROUP = "All AI platforms"
+PAGES: dict[str, Any] = {}   # st.Page objects by name, set by app.py on every run (for st.switch_page)
 
 
 def _share(data: Data) -> None:

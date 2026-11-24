@@ -10,6 +10,8 @@ from workflows import recommend
 
 ROW_COLUMNS = ["Platform", "Applications", "Server Role", "Device Name", "Environment", "Criticality", "OS Family",
                "Control Description", "Qualys Control ID", "Days Failing", "MBSS Score", "Evaluation Date", "Report Application"]
+FAILING_BUCKETS = [(-1, 30, "0–30"), (30, 90, "31–90"), (90, 180, "91–180"), (180, 365, "181–365"),
+                   (365, 10**6, "Over 365")]
 
 
 def _page_filters(frame: pd.DataFrame) -> pd.DataFrame:
@@ -64,7 +66,7 @@ def _detail(frame: pd.DataFrame, control_id: str, control: str) -> None:
         with right:
             servers = rows[["Device Name", "Applications", "Environment", "Days Failing", "MBSS Score"]]
             st.dataframe(servers.sort_values("Days Failing", ascending=False), hide_index=True, height=330)
-    components.recommendation_panel(recommend.MBSS, first.to_dict(), key=f"{control_id}-{control[:60]}")
+    components.recommendation_panel(recommend.MBSS, first.to_dict(), key=f"{control_id}-{control[:60]}", servers=rows)
 
 
 def _tab_controls(frame: pd.DataFrame) -> None:
@@ -143,7 +145,23 @@ def render() -> None:
         top["Control"] = top["Control"].str.slice(0, 70) + top["Control"].str.len().gt(70).map({True: "…", False: ""})
         charts.show(charts.ranked_bars(top, "Control", "Servers", "Servers failing the control"))
 
-    tabs = st.tabs(["Controls (grouped)", "By server", "All rows"], key="m_tabs", on_change="rerun")
+    one, two = st.columns([1, 1.6])
+    with one, st.container(border=True):
+        theme.title("How long checks have been failing", "Days since the posture last changed")
+        labels = [label for _, _, label in FAILING_BUCKETS]
+        buckets = pd.cut(frame["Days Failing"], bins=[FAILING_BUCKETS[0][0]] + [high for _, high, _ in FAILING_BUCKETS],
+                         labels=labels)
+        ages = buckets.value_counts().reindex(labels, fill_value=0).rename_axis("Days").reset_index(name="Failed checks")
+        charts.show(charts.ranked_bars(ages, "Days", "Failed checks", "Failed checks", order=labels, headroom=0.3))
+    with two, st.container(border=True):
+        theme.title("Applications with most failed checks", "Top 8, by criticality")
+        top_apps = list(frame.groupby("Applications").size().nlargest(8).index)
+        counts = (frame[frame["Applications"].isin(top_apps)].groupby(["Applications", "Criticality"]).size()
+                  .reset_index(name="Failed checks"))
+        charts.show(charts.stacked_bars(counts, "Applications", "Failed checks", "Criticality", top_apps,
+                                        charts.SEVERITY_ORDER, charts.SEVERITY_COLORS, "Failed checks"))
+
+    tabs =st.tabs(["Controls (grouped)", "By server", "All rows"], key="m_tabs", on_change="rerun")
     for tab, body in zip(tabs, (_tab_controls, _tab_servers, _tab_rows)):
         if tab.open:
             with tab:

@@ -5,7 +5,10 @@ Colour rules (validated for colour-blind safety on a white surface):
 * severity / criticality -> a single-hue purple ramp, darker = more severe
 * status                 -> purple = fine, red = breached / gap, amber = due soon / exception, gray = not in scope
 * environment            -> purple = production, orange = development
-Every chart has hover tooltips, and the same numbers are available in a table on the page.
+* owner                  -> purple = OS team, teal = application team
+Every chart has hover tooltips, and the same numbers are available in a table on the page. Donuts are
+kept to whole-at-a-glance splits of at most six parts, and their legend carries each part's count and
+share, so no part is identified by colour alone.
 """
 from __future__ import annotations
 
@@ -31,6 +34,10 @@ CS_ORDER = ["Implemented", "Partial", "Gap", "Exception", "Not in scope"]
 CS_COLORS = [PURPLE, PURPLE_LIGHT, RED, AMBER, GRAY]
 ENV_ORDER = ["Production", "Development"]
 ENV_COLORS = [PURPLE, ORANGE]
+TEAL = "#16996B"   # beside PURPLE: checked for colour-blind separation and 3:1 contrast on white
+OWNER_ORDER = ["OS Issue", "Application Issue"]   # tools/classifier.OS / APP
+OWNER_LABELS = {"OS Issue": "OS team", "Application Issue": "Application team"}
+OWNER_COLORS = [PURPLE, TEAL]
 
 _FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif'
 
@@ -55,14 +62,17 @@ def _height(rows: int, step: int = 28, legend: bool = False) -> int:
     return rows * step + 56 + (34 if legend else 0)
 
 
-def _room(data: pd.DataFrame, value: str) -> alt.Scale:
-    """X scale with ~15% head-room so the value label after the longest bar is not clipped."""
+def _room(data: pd.DataFrame, value: str, headroom: float = 0.15) -> alt.Scale:
+    """X scale with head-room (15% by default) so the value label after the longest bar is not clipped.
+
+    A chart in a narrow column needs more: the label keeps its width in pixels while the plot shrinks.
+    """
     top = float(data[value].max()) if len(data) else 1.0
-    return alt.Scale(domain=[0, max(top, 1.0) * 1.15], nice=False)
+    return alt.Scale(domain=[0, max(top, 1.0) * (1 + headroom)], nice=False)
 
 
 def ranked_bars(data: pd.DataFrame, category: str, value: str, value_title: str, color: str = PURPLE,
-                tooltip: list[str] | None = None, order: list[str] | None = None) -> alt.Chart:
+                tooltip: list[str] | None = None, order: list[str] | None = None, headroom: float = 0.15) -> alt.Chart:
     """Horizontal bars, one colour, value written at the end of each bar.
 
     Sorted by value unless ``order`` gives a fixed category order (age buckets, for example).
@@ -71,7 +81,7 @@ def ranked_bars(data: pd.DataFrame, category: str, value: str, value_title: str,
         data = data.sort_values(value, ascending=False)
     base = alt.Chart(data).encode(
         y=alt.Y(f"{category}:N", sort=order or list(data[category]), title=None),
-        x=alt.X(f"{value}:Q", title=value_title, axis=alt.Axis(tickMinStep=1, format="~s"), scale=_room(data, value)),
+        x=alt.X(f"{value}:Q", title=value_title, axis=alt.Axis(tickMinStep=1, format="~s"), scale=_room(data, value, headroom)),
         tooltip=[alt.Tooltip(f"{category}:N"), alt.Tooltip(f"{value}:Q", title=value_title, format=",")]
         + [alt.Tooltip(f"{name}:Q", format=",") for name in tooltip or []],
     )
@@ -81,12 +91,12 @@ def ranked_bars(data: pd.DataFrame, category: str, value: str, value_title: str,
 
 
 def ordinal_bars(data: pd.DataFrame, category: str, value: str, order: list[str], colors: list[str],
-                 value_title: str) -> alt.Chart:
+                 value_title: str, headroom: float = 0.15) -> alt.Chart:
     """Horizontal bars for an ordered scale (severity): fixed order, darker = more severe."""
     present = [name for name in order if name in set(data[category])]
     base = alt.Chart(data).encode(
         y=alt.Y(f"{category}:N", sort=present, title=None),
-        x=alt.X(f"{value}:Q", title=value_title, axis=alt.Axis(format="~s"), scale=_room(data, value)),
+        x=alt.X(f"{value}:Q", title=value_title, axis=alt.Axis(format="~s"), scale=_room(data, value, headroom)),
         tooltip=[alt.Tooltip(f"{category}:N"), alt.Tooltip(f"{value}:Q", title=value_title, format=",")],
     )
     bars = base.mark_bar(cornerRadiusEnd=4, size=18).encode(
@@ -97,7 +107,8 @@ def ordinal_bars(data: pd.DataFrame, category: str, value: str, order: list[str]
 
 
 def stacked_bars(data: pd.DataFrame, category: str, value: str, series: str, category_order: list[str],
-                 series_order: list[str], colors: list[str], value_title: str, normalize: bool = False) -> alt.Chart:
+                 series_order: list[str], colors: list[str], value_title: str, normalize: bool = False,
+                 headroom: float = 0.15) -> alt.Chart:
     """Horizontal stacked bars with a legend; white gaps separate the segments."""
     present = [name for name in series_order if name in set(data[series])]
     palette = [colors[series_order.index(name)] for name in present]
@@ -106,7 +117,7 @@ def stacked_bars(data: pd.DataFrame, category: str, value: str, series: str, cat
     totals = data.groupby(category, as_index=False)[value].sum()
     x = alt.X(f"{value}:Q", title=value_title, stack="normalize" if normalize else "zero",
               axis=alt.Axis(format="%" if normalize else "~s"),
-              scale=alt.Scale(domain=[0, 1]) if normalize else _room(totals, value))
+              scale=alt.Scale(domain=[0, 1]) if normalize else _room(totals, value, headroom))
     chart = alt.Chart(data).mark_bar(size=18, stroke="white", strokeWidth=2).encode(
         y=alt.Y(f"{category}:N", sort=category_order, title=None),
         x=x,
@@ -121,6 +132,47 @@ def stacked_bars(data: pd.DataFrame, category: str, value: str, series: str, cat
             y=alt.Y(f"{category}:N", sort=category_order, title=None), x=alt.X(f"{value}:Q"),
             text=alt.Text(f"{value}:Q", format=","))
     return chart.properties(height=_height(data[category].nunique(), 34, legend=True) + (22 if len(present) > 3 else 0))
+
+
+def donut(data: pd.DataFrame, category: str, value: str, order: list[str], colors: list[str], centre: str,
+          value_title: str, labels: dict[str, str] | None = None) -> alt.Chart:
+    """Part-to-whole at a glance: a ring with the total in the centre and a legend of count and share.
+
+    ``order`` fixes both the order around the ring (clockwise from the top) and the colour of each
+    part, so a filter that removes a part never repaints the others. ``labels`` renames parts for
+    display (for example "OS Issue" -> "OS team"). Parts with no value are left out.
+    """
+    counts = data.groupby(category, as_index=False)[value].sum()
+    counts = counts[counts[value] > 0]
+    present = [name for name in order if name in set(counts[category])]
+    counts = counts.set_index(category).reindex(present).reset_index()
+    total = int(counts[value].sum())
+    counts["_share"] = counts[value] / total if total else 0.0
+    counts["_order"] = range(len(counts))
+    names = [(labels or {}).get(name, name) for name in present]
+    counts["_part"] = names
+    counts["_legend"] = [f"{name}   {count:,} · {'<1%' if share < 0.005 else f'{share:.0%}'}"
+                         for name, count, share in zip(names, counts[value], counts["_share"])]
+    legend_labels = list(counts["_legend"])
+    palette = [colors[order.index(name)] for name in present]
+
+    # The ring is sized from the plot area, so it fits a narrow column as well as a wide one.
+    radius = alt.ExprRef("min(width, height) / 2 - 2")
+    ring = alt.Chart(counts).mark_arc(outerRadius=radius, innerRadius=alt.ExprRef("(min(width, height) / 2 - 2) * 0.62"),
+                                      stroke="white", strokeWidth=2).encode(
+        theta=alt.Theta(f"{value}:Q", stack=True),
+        order=alt.Order("_order:Q"),
+        color=alt.Color("_legend:N", sort=legend_labels, scale=alt.Scale(domain=legend_labels, range=palette),
+                        legend=alt.Legend(orient="bottom", direction="vertical", columns=1, labelLimit=260)),
+        tooltip=[alt.Tooltip("_part:N", title=category), alt.Tooltip(f"{value}:Q", title=value_title, format=","),
+                 alt.Tooltip("_share:Q", title="Share", format=".1%")],
+    )
+    middle = alt.ExprRef("width / 2")
+    figure = alt.Chart(pd.DataFrame({"text": [f"{total:,}"]})).mark_text(
+        x=middle, y=alt.ExprRef("height / 2 - 7"), fontSize=20, fontWeight="bold", color=INK).encode(text="text:N")
+    caption = alt.Chart(pd.DataFrame({"text": [centre]})).mark_text(
+        x=middle, y=alt.ExprRef("height / 2 + 12"), fontSize=11, color=MUTED).encode(text="text:N")
+    return (ring + figure + caption).properties(height=200 + 20 * len(present))
 
 
 def heatmap(data: pd.DataFrame, x: str, y: str, value: str, x_order: list[str], y_order: list[str],
@@ -156,15 +208,16 @@ def trend_lines(data: pd.DataFrame, series: list[str], colors: list[str], value_
 
 
 def gantt(data: pd.DataFrame) -> alt.Chart:
-    """Schedule timeline: one bar per wave, coloured by environment."""
+    """Schedule timeline: one row per wave, one bar per change window it uses, coloured by environment."""
     present = [name for name in ENV_ORDER if name in set(data["Environment"])]
+    waves = list(dict.fromkeys(data["Wave"]))
     chart = alt.Chart(data).mark_bar(cornerRadius=4, size=18).encode(
-        x=alt.X("Start:T", title=None, axis=alt.Axis(format="%a %d %b %H:%M", labelAngle=0, tickCount=6)),
+        x=alt.X("Start:T", title=None, axis=alt.Axis(format="%a %d %b", labelAngle=0, tickCount="day")),
         x2="End:T",
-        y=alt.Y("Wave:N", sort=list(data["Wave"]), title=None),
+        y=alt.Y("Wave:N", sort=waves, title=None),
         color=alt.Color("Environment:N", scale=alt.Scale(domain=present, range=[ENV_COLORS[ENV_ORDER.index(n)] for n in present])),
-        tooltip=[alt.Tooltip("Wave:N"), alt.Tooltip("Environment:N"), alt.Tooltip("Start:T", format="%a %d %b %Y %H:%M"),
-                 alt.Tooltip("End:T", format="%a %d %b %Y %H:%M"), alt.Tooltip("Servers:Q"),
-                 alt.Tooltip("Estimated minutes:Q")],
+        tooltip=[alt.Tooltip("Wave:N"), alt.Tooltip("Window:N"), alt.Tooltip("Environment:N"),
+                 alt.Tooltip("Start:T", format="%a %d %b %Y %H:%M"), alt.Tooltip("End:T", format="%a %d %b %Y %H:%M"),
+                 alt.Tooltip("Servers:Q"), alt.Tooltip("Estimated minutes:Q")],
     )
-    return chart.properties(height=_height(len(data), 40, legend=True))
+    return chart.properties(height=_height(len(waves), 40, legend=True))
