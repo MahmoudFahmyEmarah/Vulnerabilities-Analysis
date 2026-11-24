@@ -18,6 +18,8 @@ One place to track three security checks for the platform's servers, with AI hel
 
 ## Run it locally
 
+Step by step for another machine or CML, and every setting in one place: [DEPLOYMENT.md](DEPLOYMENT.md).
+
 ```bash
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install -r requirements.txt
