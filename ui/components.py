@@ -96,12 +96,12 @@ def _use_it(result: dict[str, Any], key: str, finding: dict[str, Any], servers: 
              "Risky commands and commands with a placeholder are left out as comments. It targets development "
              "unless you pass -e target=production.")
     if right.button("Run on servers…", key=f"run-{key}-{result['id']}", icon=":material/terminal:", width="stretch",
-                    disabled=not commands or "remote" not in state.PAGES,
+                    disabled=not commands or "remote" not in state.pages(),
                     help="Open the Run on servers page with these commands and the affected servers filled in."):
         for stale in ("r_command", "r_hosts", "r_apps", "r_confirm", "remote_results"):
             st.session_state.pop(stale, None)
         st.session_state["remote_prefill"] = {"title": title, "commands": commands, "servers": hosts}
-        st.switch_page(state.PAGES["remote"])
+        st.switch_page(state.pages()["remote"])
 
 
 def recommendation_panel(check_type: str, row: dict[str, Any], key: str, servers: pd.DataFrame | None = None) -> None:

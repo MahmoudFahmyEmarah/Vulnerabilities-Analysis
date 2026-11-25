@@ -42,6 +42,17 @@ sla_days:
   Minimal: 60
 sla_due_soon_days: 3
 
+auth:
+  # Sign-in with two roles: admin (every page, plus Settings and Users) and platform owner (every page
+  # except those two). Accounts live in users_file, which is git-ignored; passwords only as salted hashes.
+  # Create the first admin in a terminal:  python -m tools.auth add <name> --role admin
+  enabled: true
+  users_file: memory/store/users.json
+  session_hours: 12          # signed-in sessions end after this (closing or reloading the page also signs out)
+  min_password_length: 12
+  max_failures: 5            # wrong passwords in a row before the account is locked for lockout_minutes
+  lockout_minutes: 15
+
 ui:
   max_table_rows: 5000   # rows rendered in the browser; downloads always contain everything
 

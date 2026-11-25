@@ -17,7 +17,7 @@ from memory.knowledge_base import KnowledgeBase
 from observability import tracing
 from tools import classifier, data_loader as dl, environment as env
 from tools.saudi_calendar import SaudiCalendar
-from ui import state, theme
+from ui import account, state, theme
 
 
 def _save_env(values: dict[str, str]) -> None:
@@ -398,6 +398,9 @@ def _logs_section() -> None:
 
 
 def render() -> None:
+    if not account.is_admin():   # app.py only offers this page to admins; this guards it anyway
+        st.error("Only admins can open the Settings page.")
+        return
     data = state.load()
     theme.hero("Settings", "Configuration",
                "Connect the self-hosted model, choose the report files, confirm which servers are production, and "

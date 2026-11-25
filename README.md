@@ -13,6 +13,7 @@ One place to track three security checks for the platform's servers, with AI hel
 - **Run on servers** — sign in over SSH for the browser session and run one command on one or many servers
 - **Email report** — email the numbers and main findings of one platform, several applications or all of them,
   with the Excel export attached
+- **Sign-in** — admins see every page; platform owners see every page except Settings and Users
 - **Excel export** — *Export to Excel* on the Overview page: one workbook for the sidebar scope with a summary and
   charts, one row per application, and every open finding, failed MBSS check and server with a CS gap
 
@@ -23,6 +24,7 @@ Step by step for another machine or CML, and every setting in one place: [DEPLOY
 ```bash
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install -r requirements.txt
+.venv/Scripts/python.exe -m tools.auth add <name> --role admin   # the first account; asks for its password
 .venv/Scripts/python.exe -m streamlit run app.py
 ```
 
@@ -78,8 +80,9 @@ No Dockerfile is needed; CML runs the app in one of its ML Runtimes.
 
 Check before going live:
 
-- **Access.** The app has no login of its own and shows server names and IPs. Keep the application restricted
-  to authenticated CML users.
+- **Access.** Everyone signs in (see *Sign-in and roles*); create the first admin in a session terminal with
+  `python -m tools.auth add <name> --role admin`. The app shows server names and IPs, so keep the application
+  restricted to authenticated CML users as well.
 - **Network.** The application pod must reach the model endpoint and, for step 2, PyPI or your package mirror.
   *Run on servers* also needs SSH (port 22) from the pod to the servers, and *Email report* needs the SMTP relay.
   Without them those two pages still load; the playbook and `.eml` downloads work everywhere.
@@ -195,6 +198,16 @@ Sending needs your organisation's SMTP relay in `.env` or in the CML Application
 and `SMTP_FROM` (see `.env.example`). Without them the page can still download the email as an `.eml` file,
 which Outlook opens as a new message ready to send. `email:` in `config.yaml` sets the subject, the allowed
 recipient domains, how many applications get their own section and the attachment size limit.
+
+## Sign-in and roles
+
+Every page needs a sign-in. **Admins** see every page, including **Settings** and **Users**; **platform owners**
+see every page except those two. Admins manage accounts on the Users page, and everyone can change their own
+password from the sidebar. Accounts live in `memory/store/users.json` (git-ignored); passwords are stored only as
+salted PBKDF2-SHA256 hashes, five wrong passwords lock an account for 15 minutes, and sign-ins and account changes
+are logged to `observability/logs/auth.jsonl` without passwords. A sign-in lasts 12 hours or until the page is
+closed or reloaded. `python -m tools.auth` (add, list, password, role, remove) manages accounts from a terminal;
+`auth` in `config.yaml` holds the settings, and `enabled: false` switches sign-in off. Details: DEPLOYMENT.md.
 
 ## Project layout
 

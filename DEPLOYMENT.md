@@ -27,16 +27,19 @@ code, `MS_All_servers.xlsx` and the AI Platforms Inventory; it has no reports an
 4. Copy the three Excel reports (vulnerabilities, MBSS, CS Controls) into `latest_Data\`. Any file names work, because
    the app recognises each report by its columns. You can also upload them later on the **Settings** page.
 5. Optional: copy `.env.example` to `.env` and fill it in (see section 3).
-6. Start the app:
+6. Create the first admin account (the password is asked for and not shown):
+   ```powershell
+   .venv\Scripts\python.exe -m tools.auth add <name> --role admin
+   ```
+7. Start the app:
    ```powershell
    .venv\Scripts\python.exe -m streamlit run app.py
    ```
-   Then open http://localhost:8501. The first read of a new report takes about 30 seconds; after that it is cached
-   in `.cache\`.
+   Then open http://localhost:8501 and sign in. The first read of a new report takes about 30 seconds; after that
+   it is cached in `.cache\`.
 
-**To let colleagues on the network open it,** add `--server.address 0.0.0.0` to the start command. The app has no
-login of its own and shows server addresses, and *Run on servers* can reach your servers, so only do this on a
-trusted network.
+**To let colleagues on the network open it,** add `--server.address 0.0.0.0` to the start command. Everyone must
+sign in, but the page is plain HTTP: put it behind HTTPS (a reverse proxy) or use it only on a trusted network.
 
 ## 2. On CML
 
@@ -44,16 +47,20 @@ trusted network.
 2. **Install the libraries once.** Start a session with a **Python 3.11+** runtime, open its terminal and run
    `pip install -r requirements.txt`. Repeat this whenever `requirements.txt` changes.
 3. **Add the reports** to `latest_Data/` in the project, or upload them later on the Settings page.
-4. **Create the application.** Go to **Applications → New Application** and set:
+4. **Create the first admin** in the same session terminal: `python -m tools.auth add <name> --role admin`
+   (the password is asked for and not shown). The account file is `memory/store/users.json` in the project, so the
+   application sees it.
+5. **Create the application.** Go to **Applications → New Application** and set:
    - **Script:** `cml_app.py` (it listens on `127.0.0.1:$CDSW_APP_PORT`, which is what CML expects)
    - **Runtime:** the same Python 3.11+ runtime
    - **Resource profile:** 2 vCPU and 8 GB is enough for the current report sizes
    - **Environment variables:** those in section 3, at least `LLM_BASE_URL`
-5. **Start it** and open the application link.
+6. **Start it**, open the application link and sign in.
 
 **Check before going live:**
 
-- **Access:** restrict the application to your team.
+- **Access:** everyone signs in to the dashboard, and CML adds its own login in front. Keep the application
+  restricted to your team as well.
 - **Network from the CML pod:**
   - to the model endpoint;
   - SSH port 22 to the servers, for Run on servers;
@@ -97,6 +104,8 @@ Changes apply without a restart.
 - `llm`: preferred models, temperature, timeout, `max_tokens` (the answer budget, 8000; reasoning models such as
   gpt-oss spend part of it thinking, and a cut-off answer is retried once with twice the budget) and
   `reasoning_effort` (low / medium / high for gpt-oss; blank leaves the server's default).
+- `auth`: sign-in on or off (`enabled`), the account file, how long a sign-in lasts (`session_hours`, 12), the
+  minimum password length (12), and how many wrong passwords lock an account and for how long (5, 15 minutes).
 - `email`: subject, `allowed_recipient_domains` (worth setting to your company domain so reports can't go
   outside), how many applications get their own section, attachment on/off and its size limit.
 
@@ -117,7 +126,26 @@ The rules. Changes also apply without a restart.
   - `known_hosts_file`.
 - `llm_input`: mask IP addresses before they go to the model, and the staff-name columns that are never sent.
 
-### In the app (Settings page)
+### Accounts and roles
+
+There are two roles. **Admins** see every page, including **Settings** and **Users**. **Platform owners** see every
+page except those two. On the **Users** page an admin adds accounts, changes roles, sets new passwords and removes
+accounts; nobody can remove their own account or take the admin role from themselves, and the last admin cannot be
+removed. Everyone can change their own password from the sidebar.
+
+Passwords are stored only as salted PBKDF2-SHA256 hashes in `memory/store/users.json` (git-ignored, and not in the
+CML zip). Sign-ins and account changes are logged to `observability/logs/auth.jsonl`, never with a password.
+Reloading or closing the page signs you out. From a terminal in the project folder:
+
+```bash
+python -m tools.auth add <name> --role admin     # or --role owner
+python -m tools.auth list
+python -m tools.auth password <name>             # set a new password
+python -m tools.auth role <name> owner           # or admin
+python -m tools.auth remove <name>
+```
+
+### In the app (Settings page, admins only)
 
 - Upload reports and fix a report's week.
 - Map servers to production or development (saved to `reference/environment_overrides.csv`); unmapped servers
@@ -126,7 +154,7 @@ The rules. Changes also apply without a restart.
 
 ## Minimum to get going
 
-Python with the libraries installed, plus the three reports. Add `LLM_BASE_URL` for the AI features, the
+Python with the libraries installed, the three reports and a first admin account. Add `LLM_BASE_URL` for the AI features, the
 `SMTP_*` settings to send email, and SSH access plus `known_hosts` for Run on servers.
 
 ## Troubleshooting
@@ -137,3 +165,5 @@ Python with the libraries installed, plus the three reports. Add `LLM_BASE_URL` 
 | The application log shows `_ARRAY_API not found` or `numpy.core.multiarray failed to import` from matplotlib | The CML runtime's own matplotlib is built for NumPy 1, and pandas 3 needs NumPy 2. CML imports matplotlib when a session or application starts; the dashboard itself does not use it | `requirements.txt` now installs a matplotlib built for NumPy 2. On a project installed earlier, run `pip install --upgrade "matplotlib>=3.9"` in a session terminal, then restart the application |
 | *Model call failed (LengthFinishReasonError)* on an AI fix | The answer did not fit in `llm.max_tokens` | Raise `llm.max_tokens` in `config.yaml` (8000 by default), or set `llm.reasoning_effort: low` for gpt-oss |
 | Uploading a report on the Settings page gives a 403 on CML | The CML proxy blocks Streamlit's upload check | Add `STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=false` and `STREAMLIT_SERVER_ENABLE_CORS=false` to the application, or copy the files into `latest_Data/` |
+| The sign-in page says *No accounts exist yet* | `memory/store/users.json` has no accounts | Run `python -m tools.auth add <name> --role admin` in a terminal in the project folder, then reload the page |
+| An admin forgot their password, or an account is locked after wrong passwords | A lock lasts `auth.lockout_minutes` (15) | Another admin sets a new password on the Users page (this also lifts the lock), or run `python -m tools.auth password <name>` in a terminal |
