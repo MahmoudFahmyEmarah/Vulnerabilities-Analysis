@@ -349,10 +349,15 @@ def _classifier_section(data: state.Data) -> None:
             st.caption("Load a vulnerability report first.")
             return
         unmatched = data.vulns.loc[data.vulns["Topic Rule"] == classifier.UNMATCHED_RULE, "Title"]
-        titles = sorted(unmatched.unique())
-        st.write(f"Rules classify {1 - len(unmatched) / len(data.vulns):.2%} of open findings. "
+        untitled = unmatched.isna() | (unmatched.astype("string").str.strip() == "")
+        unmatched = unmatched[~untitled]   # a report row without a title cannot be classified (or sorted)
+        titles = sorted(map(str, unmatched.unique()))
+        st.write(f"Rules classify {1 - (len(unmatched) + int(untitled.sum())) / len(data.vulns):.2%} of open findings. "
                  f"**{len(titles)}** unique titles ({len(unmatched):,} findings) match no rule and default to "
                  "application issues.")
+        if untitled.any():
+            st.caption(f"{int(untitled.sum()):,} finding(s) have no title in the report. They count as application "
+                       "issues and are left out of the model classification.")
         if titles:
             with st.expander("Unmatched titles"):
                 st.dataframe(unmatched.value_counts().rename_axis("Title").reset_index(name="Findings"), hide_index=True)
