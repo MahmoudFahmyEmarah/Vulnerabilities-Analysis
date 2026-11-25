@@ -94,7 +94,9 @@ Changes apply without a restart.
 - `app`: title, team name, data folder, team server list (`MS_All_servers.xlsx`), the AI inventory file and its
   sheet-to-platform names.
 - `sla_days` and `sla_due_soon_days`: the SLA per severity and when a finding counts as "due soon".
-- `llm`: preferred models, temperature and timeout.
+- `llm`: preferred models, temperature, timeout, `max_tokens` (the answer budget, 8000; reasoning models such as
+  gpt-oss spend part of it thinking, and a cut-off answer is retried once with twice the budget) and
+  `reasoning_effort` (low / medium / high for gpt-oss; blank leaves the server's default).
 - `email`: subject, `allowed_recipient_domains` (worth setting to your company domain so reports can't go
   outside), how many applications get their own section, attachment on/off and its size limit.
 

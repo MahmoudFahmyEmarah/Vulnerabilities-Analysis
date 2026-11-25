@@ -244,7 +244,39 @@ def test_a_hung_endpoint_is_not_retried(monkeypatch):
             raise APITimeoutError(request=httpx.Request("POST", "http://model/v1/chat/completions"))
 
     agent = RemediationAgent()
-    monkeypatch.setattr(agent, "_chat", lambda model, json_mode: Hung())
+    monkeypatch.setattr(agent, "_chat", lambda model, json_mode, *args: Hung())
     with pytest.raises(base_agent.AgentError):
         agent.run(template="remediation_vulnerability.md", scan_data="x", example="{}")
     assert len(calls) == 1
+
+
+def test_a_cut_off_answer_is_retried_once_with_twice_the_budget(monkeypatch):
+    import json
+    from types import SimpleNamespace
+    from langchain_core.messages import AIMessage
+    from openai import LengthFinishReasonError
+    from agents.remediation import RemediationAgent
+
+    for enough, expected in ((6000, [3000, 6000]), (10**9, [3000, 6000])):
+        budgets = []
+
+        class Model:   # gpt-oss style: the answer only fits when the budget is large enough
+            def __init__(self, budget):
+                self.budget = budget
+
+            def invoke(self, messages):
+                budgets.append(self.budget)
+                if self.budget < enough:
+                    raise LengthFinishReasonError(completion=SimpleNamespace(usage=None))
+                return AIMessage(json.dumps(mock_llm._remediation()))
+
+        agent = RemediationAgent()
+        monkeypatch.setattr(agent, "config", agent.config.__class__(**{**agent.config.__dict__, "max_tokens": 3000}))
+        monkeypatch.setattr(agent, "_chat", lambda model, json_mode, budget, extras: Model(budget))
+        if enough == 6000:
+            answer, _ = agent.run(template="remediation_vulnerability.md", scan_data="x", example="{}")
+            assert answer.steps
+        else:
+            with pytest.raises(base_agent.AgentError, match="max_tokens"):
+                agent.run(template="remediation_vulnerability.md", scan_data="x", example="{}")
+        assert budgets == expected

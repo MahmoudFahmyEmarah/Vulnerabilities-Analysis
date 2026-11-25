@@ -25,7 +25,10 @@ llm:
   model: ""
   preferred_models: [gpt-oss-120b, gpt-oss, qwen]   # picked first when the endpoint serves several
   temperature: 0.2
-  max_tokens: 3000
+  # Answer budget. Reasoning models such as gpt-oss spend part of it thinking before they write the JSON,
+  # so keep it generous. A cut-off answer is retried once with twice this budget.
+  max_tokens: 8000
+  reasoning_effort: ""   # low / medium / high for reasoning models (gpt-oss); blank = the server's default
   timeout_seconds: 180
   json_mode: true      # ask for response_format=json_object; falls back automatically if unsupported
   max_retries: 1       # extra attempts when the answer is not valid JSON
