@@ -9,6 +9,7 @@ langchain-core~=1.8
 pydantic>=2.14
 python-dotenv>=1.2
 paramiko>=3.5      # Run on servers page (SSH)
+matplotlib>=3.9    # not used by the app: CML runtimes ship a NumPy-1 matplotlib that breaks next to pandas 3's NumPy 2
 holidays>=0.109
 PyYAML>=6.0
 tzdata

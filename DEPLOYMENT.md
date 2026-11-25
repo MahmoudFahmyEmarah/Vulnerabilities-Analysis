@@ -128,3 +128,12 @@ The rules. Changes also apply without a restart.
 
 Python with the libraries installed, plus the three reports. Add `LLM_BASE_URL` for the AI features, the
 `SMTP_*` settings to send email, and SSH access plus `known_hosts` for Run on servers.
+
+## Troubleshooting
+
+| What you see | Why | What to do |
+|---|---|---|
+| `pip` says *Could not find a version that satisfies the requirement streamlit~=1.67* (or pandas 3) | The Python in that session is older than 3.11 | Start the session, and set the application, on a Python 3.11 or 3.12 runtime; check with `python --version` |
+| The application log shows `_ARRAY_API not found` or `numpy.core.multiarray failed to import` from matplotlib | The CML runtime's own matplotlib is built for NumPy 1, and pandas 3 needs NumPy 2. CML imports matplotlib when a session or application starts; the dashboard itself does not use it | `requirements.txt` now installs a matplotlib built for NumPy 2. On a project installed earlier, run `pip install --upgrade "matplotlib>=3.9"` in a session terminal, then restart the application |
+| *Model call failed (LengthFinishReasonError)* on an AI fix | The answer did not fit in `llm.max_tokens` | Raise `llm.max_tokens` in `config.yaml` (8000 by default), or set `llm.reasoning_effort: low` for gpt-oss |
+| Uploading a report on the Settings page gives a 403 on CML | The CML proxy blocks Streamlit's upload check | Add `STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=false` and `STREAMLIT_SERVER_ENABLE_CORS=false` to the application, or copy the files into `latest_Data/` |
