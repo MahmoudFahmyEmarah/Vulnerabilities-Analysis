@@ -25,7 +25,10 @@ llm:
   model: ""
   preferred_models: [gpt-oss-120b, gpt-oss, qwen]   # picked first when the endpoint serves several
   temperature: 0.2
-  max_tokens: 3000
+  # Answer budget. Reasoning models such as gpt-oss spend part of it thinking before they write the JSON,
+  # so keep it generous. A cut-off answer is retried once with twice this budget.
+  max_tokens: 8000
+  reasoning_effort: ""   # low / medium / high for reasoning models (gpt-oss); blank = the server's default
   timeout_seconds: 180
   json_mode: true      # ask for response_format=json_object; falls back automatically if unsupported
   max_retries: 1       # extra attempts when the answer is not valid JSON
@@ -38,6 +41,17 @@ sla_days:
   Low: 45
   Minimal: 60
 sla_due_soon_days: 3
+
+auth:
+  # Sign-in with two roles: admin (every page, plus Settings and Users) and platform owner (every page
+  # except those two). Accounts live in users_file, which is git-ignored; passwords only as salted hashes.
+  # Create the first admin in a terminal:  python -m tools.auth add <name> --role admin
+  enabled: true
+  users_file: memory/store/users.json
+  session_hours: 12          # signed-in sessions end after this (closing or reloading the page also signs out)
+  min_password_length: 12
+  max_failures: 5            # wrong passwords in a row before the account is locked for lockout_minutes
+  lockout_minutes: 15
 
 ui:
   max_table_rows: 5000   # rows rendered in the browser; downloads always contain everything

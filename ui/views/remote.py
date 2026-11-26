@@ -13,7 +13,7 @@ import streamlit as st
 from guardrails.output_checks import command_problems
 from tools import environment as env, remote
 from tools.saudi_calendar import SaudiCalendar
-from ui import state, theme
+from ui import account, state, theme
 import settings
 
 LOGIN, KEYS, CHECKS, RESULTS = "remote_login", "remote_trusted_keys", "remote_checks", "remote_results"
@@ -291,7 +291,7 @@ def render() -> None:
                 results = remote.run(usable, command, login, st.session_state.get(KEYS, {}), windows_hosts=windows,
                                      sudo=sudo, stop_on_error=stop, parallel=int(parallel), timeout=int(timeout))
             headers = st.context.headers or {}
-            remote.audit(user=login.username, viewer=headers.get("Remote-User") or headers.get("X-Forwarded-User") or "",
+            remote.audit(user=login.username, viewer=account.name() or headers.get("Remote-User") or "",
                          hosts=usable, command=command, sudo=sudo, results=results, source=source)
             st.session_state[RESULTS] = results
         if st.session_state.get(RESULTS):

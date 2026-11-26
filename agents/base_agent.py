@@ -39,6 +39,7 @@ class LLMSettings:
     json_mode: bool
     max_retries: int
     preferred_models: tuple[str, ...]
+    reasoning_effort: str = ""
 
 
 def llm_settings() -> LLMSettings:
@@ -56,11 +57,12 @@ def llm_settings() -> LLMSettings:
         api_key=value("LLM_API_KEY") or "not-needed",
         model=value("LLM_MODEL") or str(config.get("model") or "").strip(),
         temperature=float(config.get("temperature", 0.2)),
-        max_tokens=int(config.get("max_tokens", 3000)),
+        max_tokens=int(config.get("max_tokens", 8000)),
         timeout=int(config.get("timeout_seconds", 180)),
         json_mode=bool(config.get("json_mode", True)),
         max_retries=int(config.get("max_retries", 1)),
         preferred_models=tuple(config.get("preferred_models") or ()),
+        reasoning_effort=str(config.get("reasoning_effort") or "").strip().lower(),
     )
 
 
@@ -149,37 +151,54 @@ class BaseAgent:
     def __init__(self, config: LLMSettings | None = None):
         self.config = config or llm_settings()
 
-    def _chat(self, model: str, json_mode: bool):
+    def _chat(self, model: str, json_mode: bool, max_tokens: int | None = None, extras: bool = True):
+        """``extras`` = also send optional parameters (reasoning_effort) that some servers reject."""
         from langchain_openai import ChatOpenAI
 
         options: dict[str, Any] = {}
         if json_mode:
             options["model_kwargs"] = {"response_format": {"type": "json_object"}}
+        if extras and self.config.reasoning_effort:
+            options["reasoning_effort"] = self.config.reasoning_effort
         return ChatOpenAI(
             base_url=self.config.base_url, api_key=self.config.api_key, model=model,
-            temperature=self.config.temperature, max_tokens=self.config.max_tokens,
+            temperature=self.config.temperature, max_tokens=max_tokens or self.config.max_tokens,
             timeout=self.config.timeout, max_retries=0, **options,
         )
 
     def _invoke(self, model: str, messages: list[Any]) -> Any:
         """One model call. A refused connection or a 429/5xx answer is retried once; a timeout is not,
-        so an endpoint that hangs costs the user one timeout, not several."""
-        from openai import APIConnectionError, APITimeoutError
+        so an endpoint that hangs costs the user one timeout, not several. An answer cut off by the
+        token budget (reasoning models think before they answer) is retried once with twice the budget."""
+        from openai import APIConnectionError, APITimeoutError, LengthFinishReasonError
 
-        json_mode, retried = self.config.json_mode, False
+        json_mode, extras, retried = self.config.json_mode, True, False
+        budget = self.config.max_tokens
         while True:
             try:
-                return self._chat(model, json_mode).invoke(messages)
+                reply = self._chat(model, json_mode, budget, extras).invoke(messages)
             except APITimeoutError:
                 raise
+            except LengthFinishReasonError:
+                reply = None
             except Exception as error:  # noqa: BLE001
                 status = getattr(error, "status_code", None)
-                if json_mode and status in (400, 422):   # some servers reject response_format: ask without it
-                    json_mode = False
-                elif not retried and (isinstance(error, APIConnectionError) or status in (429, 500, 502, 503, 504)):
+                if status in (400, 422) and (json_mode or (extras and self.config.reasoning_effort)):
+                    json_mode = extras = False   # some servers reject response_format or reasoning_effort
+                    continue
+                if not retried and (isinstance(error, APIConnectionError) or status in (429, 500, 502, 503, 504)):
                     retried = True
-                else:
-                    raise
+                    continue
+                raise
+            metadata = getattr(reply, "response_metadata", None) or {}
+            if reply is not None and metadata.get("finish_reason") != "length":
+                return reply
+            if budget >= 2 * self.config.max_tokens:
+                raise AgentError(
+                    f"The model's answer was cut off at {budget:,} tokens before it was complete. Raise "
+                    "llm.max_tokens in config.yaml, or set llm.reasoning_effort: low so a reasoning model "
+                    "such as gpt-oss spends fewer tokens thinking.")
+            budget *= 2
 
     def run(self, template: str | None = None, **variables: Any) -> tuple[BaseModel, dict[str, Any]]:
         """Call the model and return (validated answer, call details)."""

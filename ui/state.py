@@ -317,7 +317,13 @@ def trend(week_list: list[Week], data: Data, by: str | tuple[str, ...] = ()) -> 
 ALL = "All"
 # An entry of the Applications filter that stands for every AI platform in the inventory.
 AI_GROUP = "All AI platforms"
-PAGES: dict[str, Any] = {}   # st.Page objects by name, set by app.py on every run (for st.switch_page)
+def set_pages(pages: dict[str, Any]) -> None:
+    """The st.Page objects this user may open, by name; set by app.py on every run (for st.switch_page)."""
+    st.session_state["_pages"] = pages
+
+
+def pages() -> dict[str, Any]:
+    return st.session_state.get("_pages", {})
 
 
 def _share(data: Data) -> None:

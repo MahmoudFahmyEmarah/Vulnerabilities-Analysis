@@ -42,7 +42,7 @@ def _control_detail(cs: pd.DataFrame, long: pd.DataFrame, vulns: pd.DataFrame) -
     if not vulns.empty:
         affected = vulns[vulns["Device Name"].isin(rows["Device Name"])].drop_duplicates("Device Name")
         os_mix = ", ".join(f"{name}: {count}" for name, count in affected["OS Family"].value_counts().items())
-    applications = sorted(rows["Applications"].unique())
+    applications = sorted(map(str, rows["Applications"].dropna().unique()))
     finding = {
         "Control": control,
         "Applications": ", ".join(applications[:10]) + (f" and {len(applications) - 10} more" if len(applications) > 10 else ""),
